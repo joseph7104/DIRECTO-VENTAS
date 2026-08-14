@@ -1,0 +1,17 @@
+/* ============================================
+   App Shell Layout
+   ============================================ */
+
+.app {
+  min-height: 100vh;
+  display: flex;
+}
+
+.app__main {
+  margin-left: var(--sidebar-width);
+  margin-top: var(--topbar-height);
+  flex: 1;
+  min-height: calc(100vh - var(--topbar-height));
+  background: var(--color-surface-alt);
+  overflow-x: hidden;
+}

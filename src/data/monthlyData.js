@@ -1,0 +1,143 @@
+// Monthly earnings mock data – Julio 2025
+
+export const monthlyKpis = {
+  ingresoTotal: {
+    label: 'INGRESO TOTAL',
+    value: 4370042,
+    formatted: 'S/ 4,370,042',
+    change: '+12.4%',
+    changeLabel: 'vs Mes Anterior',
+    trend: 'up',
+  },
+  nroTransacciones: {
+    label: 'NRO. TRANSACCIONES',
+    value: 70366,
+    formatted: '70,366',
+    change: '+8.2%',
+    changeLabel: 'vs Mes Anterior',
+    trend: 'up',
+  },
+  ticketPromedio: {
+    label: 'TCK. PROMEDIO',
+    value: 62.1,
+    formatted: 'S/ 62.1',
+    change: 'Estable',
+    changeLabel: '',
+    trend: 'neutral',
+  },
+};
+
+export const monthlyTableData = {
+  columns: [
+    { key: 'name', label: 'Nombre del mes Año', width: '200px' },
+    { key: 'ingreso_periodo', label: 'Ingreso', group: 'JULIO' },
+    { key: 'nro_src_periodo', label: 'Nro. Src', group: 'JULIO' },
+    { key: 'tck_prom_periodo', label: 'Tck. Prom', group: 'JULIO' },
+    { key: 'ingreso_total', label: 'Ingreso', group: 'TOTAL' },
+    { key: 'nro_src_total', label: 'Nro. Src', group: 'TOTAL' },
+    { key: 'tck_prom_total', label: 'Tck. Prom', group: 'TOTAL' },
+  ],
+  rows: [
+    {
+      id: 'year-2025',
+      name: '2025',
+      prefix: '—',
+      level: 0,
+      ingreso_periodo: 'S/ 4,370,042',
+      nro_src_periodo: '70,366',
+      tck_prom_periodo: 'S/ 62.1',
+      ingreso_total: 'S/ 4,370,042',
+      nro_src_total: '70,366',
+      tck_prom_total: 'S/ 62.1',
+      expandable: true,
+      children: [
+        {
+          id: 'aeropuerto',
+          name: 'Aeropuerto',
+          prefix: '→',
+          level: 1,
+          ingreso_periodo: 'S/ 1,707,098',
+          nro_src_periodo: '23,117',
+          tck_prom_periodo: 'S/ 73.8',
+          ingreso_total: 'S/ 1,707,098',
+          nro_src_total: '23,117',
+          tck_prom_total: 'S/ 73.8',
+          expandable: true,
+          children: [
+            {
+              id: 'kusi',
+              name: 'Kusi',
+              level: 2,
+              ingreso_periodo: 'S/ 784,178',
+              nro_src_periodo: '10,841',
+              tck_prom_periodo: 'S/ 72.3',
+              ingreso_total: 'S/ 784,178',
+              nro_src_total: '10,841',
+              tck_prom_total: 'S/ 72.3',
+            },
+            {
+              id: 'wari-wally',
+              name: 'Wari + Wally',
+              level: 2,
+              ingreso_periodo: 'S/ 922,920',
+              nro_src_periodo: '12,276',
+              tck_prom_periodo: 'S/ 75.2',
+              ingreso_total: 'S/ 922,920',
+              nro_src_total: '12,276',
+              tck_prom_total: 'S/ 75.2',
+            },
+          ],
+        },
+        {
+          id: 'ciudad',
+          name: 'Ciudad',
+          prefix: '→',
+          level: 1,
+          ingreso_periodo: 'S/ 1,500,070',
+          nro_src_periodo: '26,544',
+          tck_prom_periodo: 'S/ 56.5',
+          ingreso_total: 'S/ 1,500,070',
+          nro_src_total: '26,544',
+          tck_prom_total: 'S/ 56.5',
+          expandable: false,
+          children: [],
+        },
+        {
+          id: 'aerolineas',
+          name: 'Aerolíneas',
+          prefix: '+',
+          level: 1,
+          ingreso_periodo: 'S/ 1,162,874',
+          nro_src_periodo: '20,705',
+          tck_prom_periodo: 'S/ 56.2',
+          ingreso_total: 'S/ 1,162,874',
+          nro_src_total: '20,705',
+          tck_prom_total: 'S/ 56.2',
+          expandable: false,
+          children: [],
+        },
+      ],
+    },
+  ],
+  totalRow: {
+    name: 'Total General',
+    ingreso_periodo: 'S/ 4,370,042',
+    nro_src_periodo: '70,366',
+    tck_prom_periodo: 'S/ 62.1',
+    ingreso_total: 'S/ 4,370,042',
+    nro_src_total: '70,366',
+    tck_prom_total: 'S/ 62.1',
+  },
+};
+
+export const monthlyDistribution = [
+  { name: 'Aeropuerto', value: 1707098, color: '#0F172A' },
+  { name: 'Ciudad', value: 1500070, color: '#334155' },
+  { name: 'Aerolíneas', value: 1162874, color: '#0EA5E9' },
+];
+
+export const monthlyMeta = {
+  title: 'Ingresos por Negocio',
+  subtitle: 'Ventas Mensuales - Resumen de Julio 2025',
+  period: 'JULIO 2025',
+};

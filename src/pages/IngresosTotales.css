@@ -1,0 +1,63 @@
+.ingresos-totales-page {
+  padding-bottom: 40px;
+}
+
+.top-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.period-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 20px;
+}
+
+.refresh-data-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #0284c7;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refresh-data-btn:hover:not(:disabled) {
+  background: #f0f9ff;
+  border-color: #0284c7;
+}
+
+.refresh-data-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spinning-icon {
+  animation: spin 0.8s linear infinite;
+}
+
+.ingresos-totales-content {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

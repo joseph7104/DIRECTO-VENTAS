@@ -1,0 +1,86 @@
+/* ============================================
+   Distribution Chart
+   ============================================ */
+
+.dist-chart {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dist-chart__header {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.dist-chart__title {
+  font-family: var(--font-headline);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-primary);
+}
+
+.dist-chart__subtitle {
+  font-size: var(--text-xs);
+  color: var(--color-tertiary-light);
+  margin-top: 2px;
+}
+
+.dist-chart__body {
+  padding: var(--space-4);
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Custom tooltip --- */
+.dist-chart__tooltip {
+  background: var(--color-primary);
+  color: white;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--border-radius-sm);
+  font-size: var(--text-xs);
+  box-shadow: var(--shadow-lg);
+}
+
+.dist-chart__tooltip-label {
+  font-weight: var(--font-medium);
+  margin-bottom: 2px;
+}
+
+.dist-chart__tooltip-value {
+  font-family: var(--font-label);
+  font-weight: var(--font-bold);
+}
+
+/* --- Custom legend --- */
+.dist-chart__legend {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+.dist-chart__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.dist-chart__legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dist-chart__legend-text {
+  font-size: var(--text-xs);
+  color: var(--color-tertiary);
+  font-weight: var(--font-medium);
+}

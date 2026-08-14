@@ -1,0 +1,308 @@
+/* ============================================
+   DataTable – Hierarchical Expandable Table with Sticky Dimension Column
+   ============================================ */
+
+.data-table {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  max-width: 100%;
+}
+
+/* --- Header --- */
+.data-table__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.data-table__title {
+  font-family: var(--font-headline);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.data-table__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.data-table__action-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--border-radius-sm);
+  color: var(--color-tertiary-light);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.data-table__action-btn:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-primary);
+}
+
+/* --- Scroll Container (Smooth Horizontal Scroll) --- */
+.data-table__scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f8fafc;
+}
+
+.data-table__scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.data-table__scroll::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+.data-table__scroll::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 4px;
+}
+
+/* --- Table --- */
+.data-table__table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 600px;
+  font-size: 13px;
+}
+
+/* Group header row */
+.data-table__group-header-row {
+  background: #f8fafc;
+}
+
+.data-table__group-header {
+  padding: 8px 12px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #475569;
+  text-align: center;
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border-light);
+}
+
+.data-table__group-header--first {
+  position: sticky;
+  left: 0;
+  background: #ffffff;
+  z-index: 10;
+  border-right: 2px solid #cbd5e1;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.04);
+}
+
+.data-table__group-header--highlight {
+  background: #f1f5f9;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+/* Column headers */
+.data-table__header-row {
+  background: #ffffff;
+}
+
+.data-table__th {
+  padding: 10px 12px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 700;
+  color: #0284c7;
+  border-bottom: 2px solid var(--color-border);
+  border-right: 1px solid #f1f5f9;
+  white-space: nowrap;
+}
+
+/* Sticky first column header */
+.data-table__th--name {
+  text-align: left;
+  color: #0284c7;
+  position: sticky;
+  left: 0;
+  background: #ffffff;
+  z-index: 9;
+  border-right: 2px solid #cbd5e1;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.04);
+  min-width: 220px;
+}
+
+.data-table__th--numeric {
+  text-align: right;
+  min-width: 100px;
+}
+
+.data-table__th--total-group {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+/* --- Rows --- */
+.data-table__row {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background var(--transition-fast);
+}
+
+.data-table__row:hover:not(.data-table__row--total) {
+  background: #f8fafc;
+}
+
+.data-table__row--level-0 {
+  font-weight: 700;
+  color: #0f172a;
+  background-color: #ffffff;
+}
+
+.data-table__row--level-1 {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.data-table__row--level-2 {
+  font-weight: 400;
+  color: #475569;
+}
+
+.data-table__row--level-3 {
+  font-weight: 400;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.data-table__row--expandable {
+  cursor: pointer;
+}
+
+/* Sticky first cell on all data rows */
+.data-table__cell--name {
+  text-align: left;
+  white-space: nowrap;
+  position: sticky;
+  left: 0;
+  background: #ffffff;
+  z-index: 7;
+  border-right: 2px solid #cbd5e1;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.04);
+}
+
+.data-table__row:hover .data-table__cell--name {
+  background: #f8fafc;
+}
+
+/* --- Cells --- */
+.data-table__cell {
+  padding: 9px 12px;
+  font-size: 13px;
+  vertical-align: middle;
+  border-bottom: 1px solid #f1f5f9;
+  border-right: 1px solid #f8fafc;
+}
+
+.data-table__cell--numeric {
+  text-align: right;
+  font-family: var(--font-label);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.data-table__cell--status {
+  text-align: center;
+}
+
+.data-table__cell--total-group {
+  background-color: rgba(241, 245, 249, 0.5);
+}
+
+.data-table__cell-value {
+  color: #1e293b;
+}
+
+/* Total row - Light blue matching screenshot */
+.data-table__row--total {
+  background: #bae6fd !important;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.data-table__row--total .data-table__cell {
+  background: #bae6fd !important;
+  color: #0f172a;
+  font-weight: 800;
+  padding: 11px 12px;
+  border-top: 2px solid #7dd3fc;
+  border-bottom: 2px solid #7dd3fc;
+}
+
+.data-table__row--total .data-table__cell--name,
+.data-table__cell--total-name {
+  position: sticky;
+  left: 0;
+  background: #bae6fd !important;
+  z-index: 8;
+  font-weight: 800;
+  font-size: 14px;
+  border-right: 2px solid #7dd3fc;
+}
+
+.data-table__row--total .data-table__cell-value {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+/* --- Name cell content & toggle --- */
+.data-table__name-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.data-table__toggle-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 14px;
+  width: 16px;
+  height: 16px;
+}
+
+.toggle-symbol {
+  font-weight: 800;
+  font-size: 13px;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.data-table__toggle-spacer {
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.data-table__name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

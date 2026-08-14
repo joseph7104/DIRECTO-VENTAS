@@ -1,0 +1,177 @@
+.period-filter-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.period-filter-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.period-filter-trigger:hover,
+.period-filter-trigger--open {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+}
+
+.period-filter-label {
+  font-family: var(--font-label, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  letter-spacing: 0.05em;
+  border-right: 1px solid #e2e8f0;
+  padding-right: 8px;
+}
+
+.period-filter-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.period-filter-chevron {
+  color: #64748b;
+  transition: transform 0.2s ease;
+}
+
+.period-filter-trigger--open .period-filter-chevron {
+  transform: rotate(180deg);
+}
+
+/* Dropdown Menu Card */
+.period-filter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 220px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  padding: 12px 14px;
+  z-index: 1000;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+/* Tree Structure */
+.period-filter-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tree-year-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-year-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0;
+}
+
+.tree-expand-btn {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+}
+
+.tree-checkbox-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tree-year-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* Custom Checkbox */
+.custom-checkbox {
+  width: 17px;
+  height: 17px;
+  border: 1.5px solid #64748b;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.custom-checkbox:hover {
+  border-color: #0284c7;
+}
+
+.custom-checkbox--checked {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff;
+}
+
+.custom-checkbox--indeterminate {
+  border-color: #64748b;
+  background: #ffffff;
+}
+
+.indeterminate-box {
+  width: 9px;
+  height: 9px;
+  background: #64748b;
+  border-radius: 1px;
+}
+
+/* Months list */
+.tree-months-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 26px;
+  margin-top: 6px;
+}
+
+.tree-month-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.tree-month-item:hover {
+  background: #f8fafc;
+}
+
+.tree-month-name {
+  font-size: 13px;
+  color: #1e293b;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}

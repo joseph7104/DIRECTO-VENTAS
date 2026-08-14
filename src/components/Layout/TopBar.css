@@ -1,0 +1,133 @@
+/* ============================================
+   TopBar
+   ============================================ */
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width);
+  right: 0;
+  height: var(--topbar-height);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-6);
+  z-index: 90;
+}
+
+.topbar__left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.topbar__title {
+  font-family: var(--font-headline);
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  color: var(--color-primary);
+}
+
+.topbar__title-accent {
+  color: var(--color-secondary);
+}
+
+/* --- Tabs --- */
+.topbar__tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.topbar__tab {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-tertiary);
+  border-radius: var(--border-radius-sm);
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.topbar__tab:hover {
+  color: var(--color-primary);
+  background: var(--color-surface-alt);
+}
+
+.topbar__tab--active {
+  color: var(--color-primary);
+  font-weight: var(--font-semibold);
+}
+
+.topbar__tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-secondary);
+  border-radius: 1px;
+}
+
+/* --- Right side --- */
+.topbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.topbar__action-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  border-radius: var(--border-radius);
+  transition: all var(--transition-fast);
+}
+
+.topbar__action-btn--primary {
+  background: var(--color-secondary);
+  color: white;
+}
+
+.topbar__action-btn--primary:hover {
+  background: var(--color-secondary-dark);
+}
+
+.topbar__action-btn--outlined {
+  background: transparent;
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
+}
+
+.topbar__action-btn--outlined:hover {
+  background: var(--color-surface-alt);
+}
+
+.topbar__icons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+}
+
+.topbar__icon-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--color-tertiary);
+  transition: all var(--transition-fast);
+}
+
+.topbar__icon-btn:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-primary);
+}

@@ -1,0 +1,33 @@
+/* ============================================
+   Status Badge
+   ============================================ */
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  font-family: var(--font-label);
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.06em;
+  border-radius: var(--border-radius-sm);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.status-badge--cerrado {
+  background: var(--color-surface-alt);
+  color: var(--color-tertiary);
+  border: 1px solid var(--color-border);
+}
+
+.status-badge--actual {
+  background: var(--color-info-bg);
+  color: var(--color-secondary);
+  border: 1px solid var(--color-secondary-light);
+}
+
+.status-badge--default {
+  background: var(--color-surface-alt);
+  color: var(--color-tertiary-light);
+}
