@@ -114,7 +114,9 @@ export async function fetchIngresosTotalesMulti(selections = [{ anio: 2026, mes:
         p_anios: anios,
         p_meses: meses,
       });
-      if (!error && data && data.length > 0) {
+      if (error) {
+        console.error('Error in get_ingresos_totales RPC:', error);
+      } else if (data) {
         return buildTotalesMultiDashboard(data, sortedPeriods);
       }
     } catch (err) {
@@ -362,7 +364,9 @@ export async function fetchIngresosOrigen(selections = [{ anio: 2026, mes: 6 }])
         p_anios: anios,
         p_meses: meses,
       });
-      if (!error && data && data.length > 0) {
+      if (error) {
+        console.error('Error in get_ingresos_origen RPC:', error);
+      } else if (data) {
         return buildOrigenMultiDashboard(data, sortedPeriods);
       }
     } catch (err) {
@@ -625,7 +629,9 @@ export async function fetchIngresosCiudad(selections = [{ anio: 2026, mes: 6 }])
         p_anios: anios,
         p_meses: meses,
       });
-      if (!error && data && data.length > 0) {
+      if (error) {
+        console.error('Error in get_ingresos_ciudad RPC:', error);
+      } else if (data) {
         return buildCiudadMultiDashboard(data, sortedPeriods);
       }
     } catch (err) {
@@ -883,7 +889,9 @@ export async function fetchIngresosAerolineas(selections = [{ anio: 2026, mes: 6
         p_anios: anios,
         p_meses: meses,
       });
-      if (!error && data && data.length > 0) {
+      if (error) {
+        console.error('Error in get_ingresos_aerolineas RPC:', error);
+      } else if (data) {
         return buildAerolineasMultiDashboard(data, sortedPeriods);
       }
     } catch (err) {
