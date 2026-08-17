@@ -47,7 +47,7 @@ export default function IngresosTotales() {
           </h2>
           <p className="page__subtitle">
             {dashboardData?.meta?.subtitle ||
-              (periodType === 'semana' ? 'Ventas Semanales' : 'Ventas Mensuales')}
+              (periodType === 'semana' ? 'Ventas semanales' : 'Ventas mensual')}
           </p>
         </div>
 

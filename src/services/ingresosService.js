@@ -17,8 +17,8 @@ export const MESES = [
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 const formatSoles = (val) => `S/ ${Math.round(val || 0).toLocaleString('en-US')}`;
-const formatNum   = (val) => Math.round(val || 0).toLocaleString('en-US');
-const formatTck   = (val) => `S/ ${Number(val || 0).toFixed(1)}`;
+const formatNum = (val) => Math.round(val || 0).toLocaleString('en-US');
+const formatTck = (val) => `S/ ${Number(val || 0).toFixed(1)}`;
 
 // ─── Period key helpers ────────────────────────────────────────────────────────
 const getKey = (p, periodType) => {
@@ -125,9 +125,9 @@ function generateTableHeaders(sortedPeriods, periodType = 'mes') {
   const isMultipleYears = new Set(sortedPeriods.map((p) => p.anio)).size > 1;
 
   const buildCols = (prefix) => [
-    { key: `ingreso_${prefix}`,   label: 'Ingreso' },
-    { key: `nro_src_${prefix}`,   label: 'Nro. Src' },
-    { key: `tck_prom_${prefix}`,  label: 'Tck. Prom' },
+    { key: `ingreso_${prefix}`, label: 'Ingreso' },
+    { key: `nro_src_${prefix}`, label: 'Nro. Src' },
+    { key: `tck_prom_${prefix}`, label: 'Tck. Prom' },
   ];
 
   if (periodType === 'semana') {
@@ -225,7 +225,7 @@ function filterRows(allRows, selections, periodType) {
 // ─── Generic accumulator ──────────────────────────────────────────────────────
 function accum(bucket, pKey, ingreso, servicios) {
   if (!bucket[pKey]) bucket[pKey] = { ingreso: 0, servicios: 0 };
-  bucket[pKey].ingreso   += ingreso;
+  bucket[pKey].ingreso += ingreso;
   bucket[pKey].servicios += servicios;
 }
 
@@ -233,8 +233,8 @@ function accum(bucket, pKey, ingreso, servicios) {
 function cellsForPeriod(bucket, pKey) {
   const d = bucket[pKey] || { ingreso: 0, servicios: 0 };
   return {
-    [`ingreso_${pKey}`]:  formatSoles(d.ingreso),
-    [`nro_src_${pKey}`]:  formatNum(d.servicios),
+    [`ingreso_${pKey}`]: formatSoles(d.ingreso),
+    [`nro_src_${pKey}`]: formatNum(d.servicios),
     [`tck_prom_${pKey}`]: formatTck(d.servicios > 0 ? d.ingreso / d.servicios : 0),
   };
 }
@@ -247,11 +247,11 @@ function totalCells(allPeriodBuckets, sortedPeriods, periodType) {
     srv += d.servicios || 0;
   });
   return {
-    ingreso_total:  formatSoles(ing),
-    nro_src_total:  formatNum(srv),
+    ingreso_total: formatSoles(ing),
+    nro_src_total: formatNum(srv),
     tck_prom_total: formatTck(srv > 0 ? ing / srv : 0),
-    _rawIngreso:    ing,
-    _rawServicios:  srv,
+    _rawIngreso: ing,
+    _rawServicios: srv,
   };
 }
 
@@ -275,7 +275,7 @@ export async function fetchIngresosTotalesMulti(
 
   const allowed = {
     Aeropuerto: ['Kusi', 'Wari + Wally'],
-    Ciudad:     ['Destino', 'Urbano'],
+    Ciudad: ['Destino', 'Urbano'],
     Aerolíneas: ['Jetsmart', 'Latam', 'Sky'],
   };
 
@@ -298,7 +298,7 @@ export async function fetchIngresosTotalesMulti(
 
     if (tree[neg]?.[val] !== undefined && grandByPeriod[pKey] !== undefined) {
       accum(tree[neg][val], pKey, ing, srv);
-      grandByPeriod[pKey].ingreso   += ing;
+      grandByPeriod[pKey].ingreso += ing;
       grandByPeriod[pKey].servicios += srv;
     }
   });
@@ -313,7 +313,7 @@ export async function fetchIngresosTotalesMulti(
       sortedPeriods.forEach((p) => {
         const pKey = getKey(p, periodType);
         const d = tree[negName][valName][pKey] || { ingreso: 0, servicios: 0 };
-        negByPeriod[pKey].ingreso   += d.ingreso;
+        negByPeriod[pKey].ingreso += d.ingreso;
         negByPeriod[pKey].servicios += d.servicios;
         Object.assign(vRow, cellsForPeriod(tree[negName][valName], pKey));
       });
@@ -350,9 +350,9 @@ export async function fetchIngresosTotalesMulti(
       period: periodTitle,
     },
     kpis: {
-      ingresoTotal:     { label: 'INGRESO TOTAL',        value: gt._rawIngreso,    formatted: formatSoles(gt._rawIngreso),    change: '', changeLabel: '', trend: 'up' },
-      nroTransacciones: { label: 'NRO. TRANSACCIONES',   value: gt._rawServicios,  formatted: formatNum(gt._rawServicios),    change: '', changeLabel: '', trend: 'up' },
-      ticketPromedio:   { label: 'TCK. PROMEDIO',        value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
+      ingresoTotal: { label: 'INGRESO TOTAL', value: gt._rawIngreso, formatted: formatSoles(gt._rawIngreso), change: '', changeLabel: '', trend: 'up' },
+      nroTransacciones: { label: 'NRO. TRANSACCIONES', value: gt._rawServicios, formatted: formatNum(gt._rawServicios), change: '', changeLabel: '', trend: 'up' },
+      ticketPromedio: { label: 'TCK. PROMEDIO', value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
     },
     tableData: { columns, groupHeaders, rows: [yearRow], totalRow },
   };
@@ -393,7 +393,7 @@ export async function fetchIngresosOrigen(
     const srv = parseInt(r.total_servicios, 10) || 0;
     if (!tree[val][tipo]) tree[val][tipo] = {};
     accum(tree[val][tipo], pKey, ing, srv);
-    grandByPeriod[pKey].ingreso   += ing;
+    grandByPeriod[pKey].ingreso += ing;
     grandByPeriod[pKey].servicios += srv;
   });
 
@@ -407,7 +407,7 @@ export async function fetchIngresosOrigen(
       sortedPeriods.forEach((p) => {
         const pKey = getKey(p, periodType);
         const d = tree[vName]?.[cName]?.[pKey] || { ingreso: 0, servicios: 0 };
-        vByPeriod[pKey].ingreso   += d.ingreso;
+        vByPeriod[pKey].ingreso += d.ingreso;
         vByPeriod[pKey].servicios += d.servicios;
         Object.assign(cRow, cellsForPeriod(tree[vName]?.[cName] || {}, pKey));
       });
@@ -441,9 +441,9 @@ export async function fetchIngresosOrigen(
   return {
     meta: { title: 'Ingresos Origen (Aeropuerto)', subtitle: `Aeropuerto - Kusi, Wari + Wally y Tipo Cliente (${periodTitle})`, period: periodTitle },
     kpis: {
-      ingresoTotal:     { label: 'INGRESO ORIGEN',       value: gt._rawIngreso,   formatted: formatSoles(gt._rawIngreso),  change: '', changeLabel: '', trend: 'up' },
-      nroTransacciones: { label: 'NRO. TRANSACCIONES',   value: gt._rawServicios, formatted: formatNum(gt._rawServicios),  change: '', changeLabel: '', trend: 'up' },
-      ticketPromedio:   { label: 'TCK. PROMEDIO',        value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
+      ingresoTotal: { label: 'INGRESO ORIGEN', value: gt._rawIngreso, formatted: formatSoles(gt._rawIngreso), change: '', changeLabel: '', trend: 'up' },
+      nroTransacciones: { label: 'NRO. TRANSACCIONES', value: gt._rawServicios, formatted: formatNum(gt._rawServicios), change: '', changeLabel: '', trend: 'up' },
+      ticketPromedio: { label: 'TCK. PROMEDIO', value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
     },
     tableData: { columns, groupHeaders, rows: [yearRow], totalRow },
   };
@@ -483,7 +483,7 @@ export async function fetchIngresosCiudad(
     const srv = parseInt(r.total_servicios, 10) || 0;
     if (!tree[val][tipo]) tree[val][tipo] = {};
     accum(tree[val][tipo], pKey, ing, srv);
-    grandByPeriod[pKey].ingreso   += ing;
+    grandByPeriod[pKey].ingreso += ing;
     grandByPeriod[pKey].servicios += srv;
   });
 
@@ -497,7 +497,7 @@ export async function fetchIngresosCiudad(
       sortedPeriods.forEach((p) => {
         const pKey = getKey(p, periodType);
         const d = tree[vName]?.[cName]?.[pKey] || { ingreso: 0, servicios: 0 };
-        vByPeriod[pKey].ingreso   += d.ingreso;
+        vByPeriod[pKey].ingreso += d.ingreso;
         vByPeriod[pKey].servicios += d.servicios;
         Object.assign(cRow, cellsForPeriod(tree[vName]?.[cName] || {}, pKey));
       });
@@ -531,9 +531,9 @@ export async function fetchIngresosCiudad(
   return {
     meta: { title: 'Ingresos Ciudad', subtitle: `Ciudad - Destino y Urbano por Tipo Cliente (${periodTitle})`, period: periodTitle },
     kpis: {
-      ingresoTotal:     { label: 'INGRESO CIUDAD',       value: gt._rawIngreso,   formatted: formatSoles(gt._rawIngreso),  change: '', changeLabel: '', trend: 'up' },
-      nroTransacciones: { label: 'NRO. TRANSACCIONES',   value: gt._rawServicios, formatted: formatNum(gt._rawServicios),  change: '', changeLabel: '', trend: 'up' },
-      ticketPromedio:   { label: 'TCK. PROMEDIO',        value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
+      ingresoTotal: { label: 'INGRESO CIUDAD', value: gt._rawIngreso, formatted: formatSoles(gt._rawIngreso), change: '', changeLabel: '', trend: 'up' },
+      nroTransacciones: { label: 'NRO. TRANSACCIONES', value: gt._rawServicios, formatted: formatNum(gt._rawServicios), change: '', changeLabel: '', trend: 'up' },
+      ticketPromedio: { label: 'TCK. PROMEDIO', value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
     },
     tableData: { columns, groupHeaders, rows: [yearRow], totalRow },
   };
@@ -546,9 +546,7 @@ export async function fetchIngresosAerolineas(
 ) {
   const sortedPeriods = [...selections].sort((a, b) => {
     if (a.anio !== b.anio) return a.anio - b.anio;
-    const aVal = periodType === 'semana' ? (a.semana ?? a.mes) : (a.mes ?? a.semana);
-    const bVal = periodType === 'semana' ? (b.semana ?? b.mes) : (b.mes ?? b.semana);
-    return Number(aVal || 0) - Number(bVal || 0);
+    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
   });
 
   const allRows = periodType === 'semana'
@@ -571,7 +569,7 @@ export async function fetchIngresosAerolineas(
     const ing = parseFloat(r.total_ingreso) || 0;
     const srv = parseInt(r.total_servicios, 10) || 0;
     accum(tree[val], pKey, ing, srv);
-    grandByPeriod[pKey].ingreso   += ing;
+    grandByPeriod[pKey].ingreso += ing;
     grandByPeriod[pKey].servicios += srv;
   });
 
@@ -602,9 +600,9 @@ export async function fetchIngresosAerolineas(
   return {
     meta: { title: 'Ingresos Aerolíneas', subtitle: `Aerolíneas - Jetsmart, Latam, Sky (${periodTitle})`, period: periodTitle },
     kpis: {
-      ingresoTotal:     { label: 'INGRESO AEROLÍNEAS',   value: gt._rawIngreso,   formatted: formatSoles(gt._rawIngreso),  change: '', changeLabel: '', trend: 'up' },
-      nroTransacciones: { label: 'NRO. TRANSACCIONES',   value: gt._rawServicios, formatted: formatNum(gt._rawServicios),  change: '', changeLabel: '', trend: 'up' },
-      ticketPromedio:   { label: 'TCK. PROMEDIO',        value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
+      ingresoTotal: { label: 'INGRESO AEROLÍNEAS', value: gt._rawIngreso, formatted: formatSoles(gt._rawIngreso), change: '', changeLabel: '', trend: 'up' },
+      nroTransacciones: { label: 'NRO. TRANSACCIONES', value: gt._rawServicios, formatted: formatNum(gt._rawServicios), change: '', changeLabel: '', trend: 'up' },
+      ticketPromedio: { label: 'TCK. PROMEDIO', value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
     },
     tableData: { columns, groupHeaders, rows: [yearRow], totalRow },
   };
@@ -630,11 +628,11 @@ export async function fetchOtrosIngresos(
 
   // Allowed structure: negocio -> [vals]
   const allowedStructure = {
-    Flit:                 ['Flit'],
+    Flit: ['Flit'],
     'Flit - Costa del Sol': ['Flit - Costa del Sol'],
-    'Flit - Directo':     ['Coste Ventas', 'Ingresos Ventas'],
-    Logistic:             ['Logistic'],
-    Migo:                 ['Migo1'],
+    'Flit - Directo': ['Coste Ventas', 'Ingresos Ventas'],
+    Logistic: ['Logistic'],
+    Migo: ['Migo1'],
   };
 
   const distinctYears = [...new Set(sortedPeriods.map((p) => p.anio))].filter((y) => y != null).sort((a, b) => a - b);
@@ -659,8 +657,8 @@ export async function fetchOtrosIngresos(
     const neg = normaliseNegocio(r.negocio);
     const val = normaliseVal(r.val, r.negocio);
     if (!allowedStructure[neg] || !allowedStructure[neg].includes(val)) return;
-    const y   = r.anio;
-    const u   = periodType === 'semana' ? r.semana : r.mes;
+    const y = r.anio;
+    const u = periodType === 'semana' ? r.semana : r.mes;
     const ing = parseFloat(r.total_ingreso) || 0;
     if (dataTree[y]?.[u]?.[neg]?.[val] !== undefined) {
       dataTree[y][u][neg][val] += ing;
@@ -719,7 +717,7 @@ export async function fetchOtrosIngresos(
       let negTotal = 0;
       distinctUnits.forEach((u) => {
         const amt = negByUnit[u];
-        negTotal   += amt;
+        negTotal += amt;
         yearByUnit[u] += amt;
         negRow[`unit_${u}`] = formatVal(amt);
       });
@@ -759,9 +757,9 @@ export async function fetchOtrosIngresos(
       period: periodTitle,
     },
     kpis: {
-      ingresoTotal:     { label: 'INGRESO OTROS',        value: overallGrand, formatted: formatSoles(overallGrand), change: '', changeLabel: '', trend: 'up' },
-      nroNegocios:      { label: 'NEGOCIOS ACTIVOS',     value: 5,            formatted: '5 Negocios',             change: '', changeLabel: '', trend: 'neutral' },
-      promedioMensual:  {
+      ingresoTotal: { label: 'INGRESO OTROS', value: overallGrand, formatted: formatSoles(overallGrand), change: '', changeLabel: '', trend: 'up' },
+      nroNegocios: { label: 'NEGOCIOS ACTIVOS', value: 5, formatted: '5 Negocios', change: '', changeLabel: '', trend: 'neutral' },
+      promedioMensual: {
         label: periodType === 'semana' ? 'PROMEDIO SEMANAL' : 'PROMEDIO MENSUAL',
         value: distinctUnits.length > 0 ? overallGrand / distinctUnits.length : 0,
         formatted: formatSoles(distinctUnits.length > 0 ? overallGrand / distinctUnits.length : 0),

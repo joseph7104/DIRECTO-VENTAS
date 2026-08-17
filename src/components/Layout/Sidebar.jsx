@@ -6,7 +6,6 @@ import {
   Plane,
   Store,
   Layers,
-  FileDown,
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -24,12 +23,10 @@ export default function Sidebar() {
     <aside className="sidebar">
       <div className="sidebar__header">
         <div className="sidebar__logo">
-          <div className="sidebar__logo-icon">
-            <BarChart3 size={20} strokeWidth={2.5} />
-          </div>
+          <img src="/logo.png" alt="DIRECTO Logo" className="sidebar__logo-img" />
           <div className="sidebar__logo-text">
             <span className="sidebar__logo-name">DIRECTO</span>
-            <span className="sidebar__logo-tagline">ENTERPRISE ANALYTICS</span>
+            <span className="sidebar__logo-tagline">VENTAS</span>
           </div>
         </div>
       </div>
@@ -51,13 +48,6 @@ export default function Sidebar() {
           );
         })}
       </nav>
-
-      <div className="sidebar__footer">
-        <button className="sidebar__export-btn">
-          <FileDown size={18} />
-          <span>Export Report</span>
-        </button>
-      </div>
     </aside>
   );
 }

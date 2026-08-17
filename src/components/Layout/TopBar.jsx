@@ -7,7 +7,7 @@ export default function TopBar() {
     <header className="topbar">
       <div className="topbar__left">
         <h1 className="topbar__title">
-          <span className="topbar__title-accent">DIRECTO</span> Enterprise Sales Dashboard
+          <span className="topbar__title-accent">DIRECTO</span> ventas
         </h1>
       </div>
 

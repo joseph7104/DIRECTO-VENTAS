@@ -28,15 +28,11 @@
   gap: var(--space-3);
 }
 
-.sidebar__logo-icon {
-  width: 36px;
-  height: 36px;
-  background: var(--color-secondary);
-  border-radius: var(--border-radius);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
+.sidebar__logo-img {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: contain;
   flex-shrink: 0;
 }
 
