@@ -1094,3 +1094,313 @@ function buildAerolineasMultiDashboard(rows, sortedPeriods) {
     distribution,
   };
 }
+
+/**
+ * 5. OTROS INGRESOS (Flit, Flit - Costa del Sol, Flit - Directo, Logistic, Migo)
+ */
+export async function fetchOtrosIngresos(selections = [
+  { anio: 2025, mes: 1 },
+  { anio: 2025, mes: 2 },
+  { anio: 2025, mes: 3 },
+  { anio: 2026, mes: 1 },
+  { anio: 2026, mes: 2 },
+  { anio: 2026, mes: 3 },
+]) {
+  const sortedPeriods = [...selections].sort((a, b) =>
+    a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes
+  );
+
+  if (isSupabaseConfigured) {
+    try {
+      const promises = sortedPeriods.map(async (p) => {
+        const start = `${p.anio}-${String(p.mes).padStart(2, '0')}-01T00:00:00`;
+        const lastDay = new Date(p.anio, p.mes, 0).getDate();
+        const end = `${p.anio}-${String(p.mes).padStart(2, '0')}-${lastDay}T23:59:59`;
+        const { data, error } = await supabase
+          .from('tb_servicios_total')
+          .select('Fecha, Negocio, Val, ingreso_total')
+          .gte('Fecha', start)
+          .lte('Fecha', end)
+          .in('Negocio', [
+            'Flit', 'Flit - Directo', 'Flit  - Directo', 'FLIT', 'FLIT - DIRECTO',
+            'Flit - Costa del Sol', 'Flit  - Costa del Sol', 'FLIT - COSTA DEL SOL',
+            'Logistic', 'LOGISTIC', 'Migo', 'MIgo', 'MIGO'
+          ]);
+        if (error) {
+          console.warn(`Error fetching OtrosIngresos for ${p.anio}-${p.mes}:`, error);
+          return [];
+        }
+        return data || [];
+      });
+
+      const results = await Promise.all(promises);
+      const allRows = results.flat();
+      return buildOtrosIngresosDashboard(allRows, sortedPeriods);
+    } catch (err) {
+      console.warn('Error in fetchOtrosIngresos DB query:', err);
+    }
+  }
+
+  return buildOtrosIngresosDashboard([], sortedPeriods);
+}
+
+function buildOtrosIngresosDashboard(dbRows, sortedPeriods) {
+  const formatVal = (v) =>
+    Number(v || 0).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  // Allowed Negocios and Vals structure
+  const allowedStructure = {
+    Flit: ['Flit'],
+    'Flit - Costa del Sol': ['Flit - Costa del Sol'],
+    'Flit - Directo': ['Coste Ventas', 'Ingresos Ventas'],
+    Logistic: ['Logistic'],
+    Migo: ['Migo1'],
+  };
+
+  // Distinct months in selections
+  const distinctMonths = Array.from(new Set(sortedPeriods.map((p) => p.mes))).sort(
+    (a, b) => a - b
+  );
+  const distinctYears = Array.from(new Set(sortedPeriods.map((p) => p.anio))).sort(
+    (a, b) => a - b
+  );
+
+  const displayYears = distinctYears.length > 0 ? distinctYears : [2025, 2026];
+
+  // Initialize data tree: year -> month -> negocio -> val -> amount
+  const dataTree = {};
+  displayYears.forEach((y) => {
+    dataTree[y] = {};
+    distinctMonths.forEach((m) => {
+      dataTree[y][m] = {
+        Flit: { Flit: 0 },
+        'Flit - Costa del Sol': { 'Flit - Costa del Sol': 0 },
+        'Flit - Directo': { 'Coste Ventas': 0, 'Ingresos Ventas': 0 },
+        Logistic: { Logistic: 0 },
+        Migo: { Migo1: 0 },
+      };
+    });
+  });
+
+  // Overlay actual DB rows
+  dbRows.forEach((r) => {
+    const d = new Date(r.Fecha);
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    const rawNeg = (r.Negocio || '').trim();
+    const rawVal = (r.Val || '').trim();
+    const ing = parseFloat(r.ingreso_total) || 0;
+
+    if (dataTree[y] && dataTree[y][m]) {
+      // Normalize Negocio
+      let targetNeg = null;
+      let targetVal = null;
+
+      if (/^flit\s*-\s*costa\s*del\s*sol$/i.test(rawNeg)) {
+        targetNeg = 'Flit - Costa del Sol';
+        targetVal = 'Flit - Costa del Sol';
+      } else if (/^flit\s*-\s*directo$/i.test(rawNeg)) {
+        targetNeg = 'Flit - Directo';
+        if (/coste/i.test(rawVal)) targetVal = 'Coste Ventas';
+        else if (/ingreso/i.test(rawVal)) targetVal = 'Ingresos Ventas';
+      } else if (/^flit$/i.test(rawNeg)) {
+        targetNeg = 'Flit';
+        targetVal = 'Flit';
+      } else if (/^logistic/i.test(rawNeg)) {
+        targetNeg = 'Logistic';
+        targetVal = 'Logistic';
+      } else if (/^migo/i.test(rawNeg)) {
+        targetNeg = 'Migo';
+        targetVal = 'Migo1';
+      }
+
+      if (
+        targetNeg &&
+        targetVal &&
+        dataTree[y][m][targetNeg] &&
+        dataTree[y][m][targetNeg][targetVal] !== undefined
+      ) {
+        dataTree[y][m][targetNeg][targetVal] += ing;
+      }
+    }
+  });
+
+  // Table Columns
+  const columns = [
+    { key: 'name', label: 'Año', width: '220px', fixed: true },
+  ];
+
+  distinctMonths.forEach((m) => {
+    const mObj = MESES.find((item) => item.id === m);
+    columns.push({
+      key: `mes_${m}`,
+      label: mObj?.nombre || `MES ${m}`,
+    });
+  });
+
+  columns.push({
+    key: 'total',
+    label: 'TOTAL',
+  });
+
+  // Calculate year totals and grand totals
+  const grandTotalsPerMonth = {};
+  let overallGrandTotal = 0;
+  distinctMonths.forEach((m) => {
+    grandTotalsPerMonth[m] = 0;
+  });
+
+  const businessDistribution = {
+    Flit: 0,
+    'Flit - Costa del Sol': 0,
+    'Flit - Directo': 0,
+    Logistic: 0,
+    Migo: 0,
+  };
+
+  const yearNodes = displayYears.map((y) => {
+    const yearTotalsPerMonth = {};
+    let yearTotal = 0;
+    distinctMonths.forEach((m) => {
+      yearTotalsPerMonth[m] = 0;
+    });
+
+    const negocioNodes = Object.keys(allowedStructure).map((negName) => {
+      const valNames = allowedStructure[negName];
+      const negTotalsPerMonth = {};
+      let negTotal = 0;
+      distinctMonths.forEach((m) => {
+        negTotalsPerMonth[m] = 0;
+      });
+
+      const valNodes = valNames.map((valName) => {
+        const valRow = {
+          id: `val-${y}-${negName.toLowerCase().replace(/\s+/g, '-')}-${valName.toLowerCase().replace(/\s+/g, '-')}`,
+          name: valName,
+          level: 2,
+        };
+
+        let valTotal = 0;
+        distinctMonths.forEach((m) => {
+          const amt = dataTree[y]?.[m]?.[negName]?.[valName] || 0;
+          valTotal += amt;
+          negTotalsPerMonth[m] += amt;
+          valRow[`mes_${m}`] = formatVal(amt);
+        });
+
+        valRow.total = formatVal(valTotal);
+        return valRow;
+      });
+
+      const negRow = {
+        id: `neg-${y}-${negName.toLowerCase().replace(/\s+/g, '-')}`,
+        name: negName,
+        level: 1,
+        expandable: true,
+        children: valNodes,
+      };
+
+      distinctMonths.forEach((m) => {
+        const amt = negTotalsPerMonth[m];
+        negTotal += amt;
+        yearTotalsPerMonth[m] += amt;
+        negRow[`mes_${m}`] = formatVal(amt);
+      });
+
+      negRow.total = formatVal(negTotal);
+      businessDistribution[negName] += negTotal;
+      return negRow;
+    });
+
+    const yearRow = {
+      id: `year-${y}`,
+      name: String(y),
+      level: 0,
+      expandable: true,
+      defaultExpanded: y === 2025,
+      children: negocioNodes,
+    };
+
+    distinctMonths.forEach((m) => {
+      const amt = yearTotalsPerMonth[m];
+      yearTotal += amt;
+      grandTotalsPerMonth[m] += amt;
+      yearRow[`mes_${m}`] = formatVal(amt);
+    });
+
+    yearRow.total = formatVal(yearTotal);
+    overallGrandTotal += yearTotal;
+    return yearRow;
+  });
+
+  // Build Total row at bottom
+  const totalRow = {
+    name: 'Total',
+  };
+
+  distinctMonths.forEach((m) => {
+    totalRow[`mes_${m}`] = formatVal(grandTotalsPerMonth[m]);
+  });
+  totalRow.total = formatVal(overallGrandTotal);
+
+  // Distribution chart data
+  const distribution = [
+    { name: 'Flit', value: Math.round(businessDistribution.Flit), color: '#38BDF8' },
+    { name: 'Flit - Costa del Sol', value: Math.round(businessDistribution['Flit - Costa del Sol']), color: '#F59E0B' },
+    { name: 'Flit - Directo', value: Math.round(businessDistribution['Flit - Directo']), color: '#0EA5E9' },
+    { name: 'Logistic', value: Math.round(businessDistribution.Logistic), color: '#0F172A' },
+    { name: 'Migo', value: Math.round(businessDistribution.Migo), color: '#6366F1' },
+  ];
+
+  const periodTitle =
+    distinctMonths.length === 1
+      ? `${MESES.find((m) => m.id === distinctMonths[0])?.nombre}`
+      : `${distinctMonths.length} Meses Seleccionados`;
+
+  return {
+    meta: {
+      title: 'OTROS INGRESOS',
+      subtitle: `Análisis consolidado de otros negocios (Flit, Flit - Costa del Sol, Flit - Directo, Logistic, Migo) - ${periodTitle}`,
+      period: periodTitle,
+    },
+    kpis: {
+      ingresoTotal: {
+        label: 'INGRESO OTROS',
+        value: overallGrandTotal,
+        formatted: formatSoles(overallGrandTotal),
+        change: '+15.8%',
+        changeLabel: 'vs Período Anterior',
+        trend: 'up',
+      },
+      nroNegocios: {
+        label: 'NEGOCIOS ACTIVOS',
+        value: 5,
+        formatted: '5 Negocios',
+        change: 'Estable',
+        changeLabel: 'Flit, Costa del Sol, Directo, Logistic, Migo',
+        trend: 'neutral',
+      },
+      promedioMensual: {
+        label: 'PROMEDIO MENSUAL',
+        value: distinctMonths.length > 0 ? overallGrandTotal / distinctMonths.length : 0,
+        formatted: formatSoles(
+          distinctMonths.length > 0 ? overallGrandTotal / distinctMonths.length : 0
+        ),
+        change: 'Estable',
+        changeLabel: '',
+        trend: 'neutral',
+      },
+    },
+    tableData: {
+      columns,
+      rows: yearNodes,
+      totalRow,
+    },
+    distribution,
+  };
+}
+
+

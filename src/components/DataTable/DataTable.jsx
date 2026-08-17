@@ -96,14 +96,21 @@ export default function DataTable({
     if (rows && rows.length > 0) {
       const initial = new Set();
       rows.forEach((r) => {
-        initial.add(r.id);
+        if (r.defaultExpanded !== false) {
+          initial.add(r.id);
+        }
         if (r.children) {
           r.children.forEach((child) => {
             if (
+              child.defaultExpanded === true ||
               child.name?.toLowerCase().includes('aeropuerto') ||
               child.name?.toLowerCase().includes('ciudad') ||
               child.name?.toLowerCase().includes('destino') ||
-              child.name?.toLowerCase().includes('urbano')
+              child.name?.toLowerCase().includes('urbano') ||
+              child.name?.toLowerCase().includes('flit') ||
+              child.name?.toLowerCase().includes('logistic') ||
+              child.name?.toLowerCase().includes('migo') ||
+              (child.expandable && child.children && child.children.length > 0)
             ) {
               initial.add(child.id);
             }

@@ -1,35 +1,178 @@
-import { useState } from 'react';
-import { Layers } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Layers, Receipt, Tag } from 'lucide-react';
+import KpiCard from '../components/KpiCard/KpiCard';
+import DataTable from '../components/DataTable/DataTable';
+import DistributionChart from '../components/DistributionChart/DistributionChart';
 import PeriodFilterDropdown from '../components/Filters/PeriodFilterDropdown';
+import {
+  LoadingScreen,
+  ErrorScreen,
+  EmptyScreen,
+} from '../components/Feedback/FeedbackStates';
+import {
+  fetchOtrosIngresos,
+  fetchPeriodosDisponibles,
+} from '../services/ingresosService';
 import './MonthlyEarnings.css';
 
 export default function OtrosIngresos() {
-  const [selectedPeriods, setSelectedPeriods] = useState([{ anio: 2026, mes: 6 }]);
+  // Default selected periods: Enero, Febrero, Marzo (showing 2025 and 2026 as in the image)
+  const [selectedPeriods, setSelectedPeriods] = useState([
+    { anio: 2025, mes: 1 },
+    { anio: 2025, mes: 2 },
+    { anio: 2025, mes: 3 },
+    { anio: 2026, mes: 1 },
+    { anio: 2026, mes: 2 },
+    { anio: 2026, mes: 3 },
+  ]);
+  const [availablePeriods, setAvailablePeriods] = useState([]);
+  const [dashboardData, setDashboardData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Load available periods on mount
+  useEffect(() => {
+    async function loadPeriods() {
+      try {
+        const periods = await fetchPeriodosDisponibles();
+        if (periods && periods.length > 0) {
+          setAvailablePeriods(periods);
+        }
+      } catch (err) {
+        console.warn('Error loading periods:', err);
+      }
+    }
+    loadPeriods();
+  }, []);
+
+  // Fetch data
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchOtrosIngresos(selectedPeriods);
+      setDashboardData(data);
+    } catch (err) {
+      console.error('Error fetching Otros Ingresos data:', err);
+      setError(err.message || 'Error al conectar con la base de datos');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedPeriods]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   return (
     <div className="page monthly-page">
+      {/* Top Header */}
       <div className="page__top">
         <div className="page__title-block">
-          <h2 className="page__title">OTROS INGRESOS</h2>
+          <h2 className="page__title">
+            {dashboardData?.meta?.title || 'OTROS INGRESOS'}
+          </h2>
           <p className="page__subtitle">
-            Análisis consolidado de otros conceptos, recargos y servicios adicionales.
+            {dashboardData?.meta?.subtitle ||
+              'Ventas Mensuales - Flit, Flit - Costa del Sol, Flit - Directo, Logistic y Migo'}
           </p>
         </div>
 
-        {/* Filter on top */}
+        {/* Tree Filter Dropdown */}
         <div className="page__filters">
           <PeriodFilterDropdown
             selectedSelections={selectedPeriods}
             onSelectionChange={setSelectedPeriods}
+            availablePeriods={availablePeriods}
           />
         </div>
       </div>
 
-      <div style={{ background: '#ffffff', borderRadius: 12, padding: 40, border: '1px solid #e2e8f0', textAlign: 'center', color: '#64748b', marginTop: 20 }}>
-        <Layers size={40} style={{ color: '#0284c7', margin: '0 auto 16px' }} />
-        <h3 style={{ color: '#0f172a', marginBottom: 8, fontSize: 18, fontWeight: 700 }}>Módulo de Otros Ingresos</h3>
-        <p>Visualización y desglose de recargos y conceptos complementarios.</p>
-      </div>
+      {/* ERROR STATE */}
+      {error && !loading && (
+        <ErrorScreen
+          title="Error al consultar datos de Otros Ingresos"
+          message={`No se pudieron obtener los datos de la base de datos: ${error}`}
+          onRetry={loadData}
+        />
+      )}
+
+      {/* LOADING STATE */}
+      {loading && !dashboardData && (
+        <LoadingScreen
+          title="Cargando Otros Ingresos..."
+          subtitle="Procesando métricas para Flit, Flit - Costa del Sol, Flit - Directo, Logistic y Migo"
+        />
+      )}
+
+      {/* MAIN CONTENT */}
+      {dashboardData && !error && (
+        <>
+          {/* KPI Cards */}
+          <div className="page__kpis">
+            <KpiCard
+              label={dashboardData.kpis.ingresoTotal.label}
+              value={dashboardData.kpis.ingresoTotal.formatted}
+              change={dashboardData.kpis.ingresoTotal.change}
+              changeLabel={dashboardData.kpis.ingresoTotal.changeLabel}
+              trend={dashboardData.kpis.ingresoTotal.trend}
+              icon={Layers}
+            />
+            <KpiCard
+              label={dashboardData.kpis.nroNegocios.label}
+              value={dashboardData.kpis.nroNegocios.formatted}
+              change={dashboardData.kpis.nroNegocios.change}
+              changeLabel={dashboardData.kpis.nroNegocios.changeLabel}
+              trend={dashboardData.kpis.nroNegocios.trend}
+              icon={Receipt}
+            />
+            <KpiCard
+              label={dashboardData.kpis.promedioMensual.label}
+              value={dashboardData.kpis.promedioMensual.formatted}
+              change={dashboardData.kpis.promedioMensual.change}
+              changeLabel={dashboardData.kpis.promedioMensual.changeLabel}
+              trend={dashboardData.kpis.promedioMensual.trend}
+              icon={Tag}
+            />
+          </div>
+
+          {/* Grid Layout: DataTable (Left) + DistributionChart (Right) */}
+          <div className="page__content-grid">
+            <div className="page__table-area">
+              <DataTable
+                title="Detalle Otros Ingresos"
+                columns={dashboardData.tableData.columns}
+                rows={dashboardData.tableData.rows}
+                totalRow={dashboardData.tableData.totalRow}
+              />
+            </div>
+            <div className="page__chart-area">
+              <DistributionChart
+                title="Distribución Otros Ingresos"
+                data={dashboardData.distribution}
+                type="donut"
+              />
+              <div className="page__period-label">{dashboardData.meta.period}</div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* EMPTY STATE */}
+      {!loading && !error && (!dashboardData || dashboardData.tableData.rows.length === 0) && (
+        <EmptyScreen
+          title="No hay datos registrados"
+          message="No se encontraron registros para los períodos seleccionados."
+          actionLabel="Ver Enero a Marzo 2025"
+          onAction={() => {
+            setSelectedPeriods([
+              { anio: 2025, mes: 1 },
+              { anio: 2025, mes: 2 },
+              { anio: 2025, mes: 3 },
+            ]);
+          }}
+        />
+      )}
     </div>
   );
 }
