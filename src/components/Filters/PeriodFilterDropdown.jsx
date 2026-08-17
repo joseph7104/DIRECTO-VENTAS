@@ -84,8 +84,8 @@ export default function PeriodFilterDropdown({
 
   const isItemSelected = (yr, id) => {
     if (periodType === 'semana')
-      return selectedSelections.some((s) => s.anio === yr && s.semana === id);
-    return selectedSelections.some((s) => s.anio === yr && s.mes === id);
+      return selectedSelections.some((s) => Number(s.anio) === Number(yr) && Number(s.semana ?? s.mes) === Number(id));
+    return selectedSelections.some((s) => Number(s.anio) === Number(yr) && Number(s.mes ?? s.semana) === Number(id));
   };
 
   const handleToggleItem = (yr, id) => {
@@ -93,8 +93,8 @@ export default function PeriodFilterDropdown({
     let next;
     if (isSelected) {
       next = periodType === 'semana'
-        ? selectedSelections.filter((s) => !(s.anio === yr && s.semana === id))
-        : selectedSelections.filter((s) => !(s.anio === yr && s.mes === id));
+        ? selectedSelections.filter((s) => !(Number(s.anio) === Number(yr) && Number(s.semana ?? s.mes) === Number(id)))
+        : selectedSelections.filter((s) => !(Number(s.anio) === Number(yr) && Number(s.mes ?? s.semana) === Number(id)));
       if (next.length === 0) return; // keep at least one
     } else {
       next = periodType === 'semana'
@@ -109,10 +109,10 @@ export default function PeriodFilterDropdown({
     const allSelected = items.every((id) => isItemSelected(yr, id));
     let next;
     if (allSelected) {
-      next = selectedSelections.filter((s) => s.anio !== yr);
+      next = selectedSelections.filter((s) => Number(s.anio) !== Number(yr));
       if (next.length === 0) return;
     } else {
-      const others = selectedSelections.filter((s) => s.anio !== yr);
+      const others = selectedSelections.filter((s) => Number(s.anio) !== Number(yr));
       const newForYear = periodType === 'semana'
         ? items.map((w) => ({ anio: yr, semana: w }))
         : items.map((m) => ({ anio: yr, mes: m }));
@@ -135,7 +135,8 @@ export default function PeriodFilterDropdown({
     if (periodType === 'semana') {
       if (selectedSelections.length === 1) {
         const s = selectedSelections[0];
-        return `Semana ${s.semana} ${s.anio}`;
+        const semVal = s.semana ?? s.mes;
+        return `Semana ${semVal} ${s.anio}`;
       }
       return selectedSelections.length > 1
         ? `Semanas (${selectedSelections.length})`
@@ -143,8 +144,9 @@ export default function PeriodFilterDropdown({
     }
     if (selectedSelections.length === 1) {
       const s = selectedSelections[0];
-      const mObj = MESES.find((m) => m.id === s.mes);
-      return `${mObj?.nombre || 'MES'} ${s.anio}`;
+      const mesVal = s.mes ?? s.semana;
+      const mObj = MESES.find((m) => m.id === mesVal);
+      return `${mObj?.nombre || 'MES ' + mesVal} ${s.anio}`;
     }
     return selectedSelections.length > 1
       ? `Multiple selections (${selectedSelections.length})`

@@ -21,17 +21,24 @@ const formatNum   = (val) => Math.round(val || 0).toLocaleString('en-US');
 const formatTck   = (val) => `S/ ${Number(val || 0).toFixed(1)}`;
 
 // ─── Period key helpers ────────────────────────────────────────────────────────
-const getKey = (p, periodType) =>
-  periodType === 'semana' ? `${p.anio}_sem_${p.semana}` : `${p.anio}_${p.mes}`;
+const getKey = (p, periodType) => {
+  if (!p) return '';
+  const val = periodType === 'semana' ? (p.semana ?? p.mes) : (p.mes ?? p.semana);
+  return `${p.anio}_${periodType === 'semana' ? 'sem_' : ''}${val}`;
+};
 
 const getPeriodLabel = (sortedPeriods, periodType) => {
+  if (!sortedPeriods || sortedPeriods.length === 0) return '';
+  const s0 = sortedPeriods[0];
   if (periodType === 'semana') {
+    const semVal = s0.semana ?? s0.mes;
     return sortedPeriods.length === 1
-      ? `Semana ${sortedPeriods[0].semana} ${sortedPeriods[0].anio}`
+      ? `Semana ${semVal} ${s0.anio}`
       : `${sortedPeriods.length} Semanas Seleccionadas`;
   }
+  const mesVal = s0.mes ?? s0.semana;
   return sortedPeriods.length === 1
-    ? `${MESES.find((m) => m.id === sortedPeriods[0].mes)?.nombre} ${sortedPeriods[0].anio}`
+    ? `${MESES.find((m) => m.id === mesVal)?.nombre || 'MES ' + mesVal} ${s0.anio}`
     : `${sortedPeriods.length} Meses Seleccionados`;
 };
 
@@ -61,6 +68,7 @@ async function getResumenMensual() {
 }
 
 // ─── Available periods from DB (no hardcoding) ────────────────────────────────
+// ─── Available periods from DB (no hardcoding) ────────────────────────────────
 export async function fetchMesesDisponibles() {
   if (!isSupabaseConfigured) return [];
   try {
@@ -68,17 +76,19 @@ export async function fetchMesesDisponibles() {
     const unique = [];
     const seen = new Set();
     rows.forEach((r) => {
-      const key = `${r.anio}_${r.mes}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push({ anio: r.anio, mes: r.mes });
+      if (r && r.anio != null && r.mes != null) {
+        const key = `${r.anio}_${r.mes}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push({ anio: Number(r.anio), mes: Number(r.mes) });
+        }
       }
     });
     return unique.sort((a, b) => b.anio !== a.anio ? b.anio - a.anio : b.mes - a.mes);
   } catch (err) {
     console.warn('fetchMesesDisponibles fallback to rpc:', err);
     const { data } = await supabase.rpc('get_meses_disponibles');
-    return data || [];
+    return (data || []).filter((r) => r && r.anio != null && r.mes != null);
   }
 }
 
@@ -89,17 +99,19 @@ export async function fetchSemanasDisponibles() {
     const unique = [];
     const seen = new Set();
     rows.forEach((r) => {
-      const key = `${r.anio}_${r.semana}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push({ anio: r.anio, semana: r.semana });
+      if (r && r.anio != null && r.semana != null) {
+        const key = `${r.anio}_${r.semana}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push({ anio: Number(r.anio), semana: Number(r.semana) });
+        }
       }
     });
     return unique.sort((a, b) => b.anio !== a.anio ? b.anio - a.anio : b.semana - a.semana);
   } catch (err) {
     console.warn('fetchSemanasDisponibles fallback to rpc:', err);
     const { data } = await supabase.rpc('get_semanas_disponibles');
-    return data || [];
+    return (data || []).filter((r) => r && r.anio != null && r.semana != null);
   }
 }
 
@@ -121,12 +133,15 @@ function generateTableHeaders(sortedPeriods, periodType = 'mes') {
   if (periodType === 'semana') {
     const groupHeaders = [
       { label: '', colSpan: 1 },
-      ...sortedPeriods.map((p) => ({
-        label: isMultipleYears ? `SEMANA ${p.semana} ${p.anio}` : `SEMANA ${p.semana}`,
-        colSpan: 3,
-        highlight: false,
-        key: getKey(p, periodType),
-      })),
+      ...sortedPeriods.map((p) => {
+        const semVal = p.semana ?? p.mes;
+        return {
+          label: isMultipleYears ? `SEMANA ${semVal} ${p.anio}` : `SEMANA ${semVal}`,
+          colSpan: 3,
+          highlight: false,
+          key: getKey(p, periodType),
+        };
+      }),
       { label: 'TOTAL', colSpan: 3, highlight: true, key: 'total' },
     ];
     const columns = [
@@ -140,9 +155,10 @@ function generateTableHeaders(sortedPeriods, periodType = 'mes') {
   const groupHeaders = [
     { label: '', colSpan: 1 },
     ...sortedPeriods.map((p) => {
-      const mObj = MESES.find((m) => m.id === p.mes);
+      const mesVal = p.mes ?? p.semana;
+      const mObj = MESES.find((m) => m.id === mesVal);
       return {
-        label: isMultipleYears ? `${mObj?.nombre || 'MES'} ${p.anio}` : `${mObj?.nombre || 'MES'}`,
+        label: isMultipleYears ? `${mObj?.nombre || 'MES ' + mesVal} ${p.anio}` : `${mObj?.nombre || 'MES ' + mesVal}`,
         colSpan: 3,
         highlight: false,
         key: getKey(p, periodType),
@@ -194,9 +210,14 @@ function normaliseVal(rawVal, rawNeg) {
 // Filter aggregated rows to only matching selections
 function filterRows(allRows, selections, periodType) {
   return allRows.filter((r) => {
+    if (!r || r.anio == null) return false;
+    const rVal = periodType === 'semana' ? r.semana : r.mes;
+    if (rVal == null) return false;
+
     return selections.some((s) => {
-      if (s.anio !== r.anio) return false;
-      return periodType === 'semana' ? s.semana === r.semana : s.mes === r.mes;
+      if (Number(s.anio) !== Number(r.anio)) return false;
+      const sVal = periodType === 'semana' ? (s.semana ?? s.mes) : (s.mes ?? s.semana);
+      return Number(sVal) === Number(rVal);
     });
   });
 }
@@ -241,7 +262,9 @@ export async function fetchIngresosTotalesMulti(
 ) {
   const sortedPeriods = [...selections].sort((a, b) => {
     if (a.anio !== b.anio) return a.anio - b.anio;
-    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
+    const aVal = periodType === 'semana' ? (a.semana ?? a.mes) : (a.mes ?? a.semana);
+    const bVal = periodType === 'semana' ? (b.semana ?? b.mes) : (b.mes ?? b.semana);
+    return Number(aVal || 0) - Number(bVal || 0);
   });
 
   const allRows = periodType === 'semana'
@@ -342,7 +365,9 @@ export async function fetchIngresosOrigen(
 ) {
   const sortedPeriods = [...selections].sort((a, b) => {
     if (a.anio !== b.anio) return a.anio - b.anio;
-    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
+    const aVal = periodType === 'semana' ? (a.semana ?? a.mes) : (a.mes ?? a.semana);
+    const bVal = periodType === 'semana' ? (b.semana ?? b.mes) : (b.mes ?? b.semana);
+    return Number(aVal || 0) - Number(bVal || 0);
   });
 
   const allRows = periodType === 'semana'
@@ -431,7 +456,9 @@ export async function fetchIngresosCiudad(
 ) {
   const sortedPeriods = [...selections].sort((a, b) => {
     if (a.anio !== b.anio) return a.anio - b.anio;
-    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
+    const aVal = periodType === 'semana' ? (a.semana ?? a.mes) : (a.mes ?? a.semana);
+    const bVal = periodType === 'semana' ? (b.semana ?? b.mes) : (b.mes ?? b.semana);
+    return Number(aVal || 0) - Number(bVal || 0);
   });
 
   const allRows = periodType === 'semana'
@@ -519,7 +546,9 @@ export async function fetchIngresosAerolineas(
 ) {
   const sortedPeriods = [...selections].sort((a, b) => {
     if (a.anio !== b.anio) return a.anio - b.anio;
-    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
+    const aVal = periodType === 'semana' ? (a.semana ?? a.mes) : (a.mes ?? a.semana);
+    const bVal = periodType === 'semana' ? (b.semana ?? b.mes) : (b.mes ?? b.semana);
+    return Number(aVal || 0) - Number(bVal || 0);
   });
 
   const allRows = periodType === 'semana'
@@ -588,7 +617,9 @@ export async function fetchOtrosIngresos(
 ) {
   const sortedPeriods = [...selections].sort((a, b) => {
     if (a.anio !== b.anio) return a.anio - b.anio;
-    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
+    const aVal = periodType === 'semana' ? (a.semana ?? a.mes) : (a.mes ?? a.semana);
+    const bVal = periodType === 'semana' ? (b.semana ?? b.mes) : (b.mes ?? b.semana);
+    return Number(aVal || 0) - Number(bVal || 0);
   });
 
   const allRows = periodType === 'semana'
@@ -606,10 +637,10 @@ export async function fetchOtrosIngresos(
     Migo:                 ['Migo1'],
   };
 
-  const distinctYears = [...new Set(sortedPeriods.map((p) => p.anio))].sort((a, b) => a - b);
+  const distinctYears = [...new Set(sortedPeriods.map((p) => p.anio))].filter((y) => y != null).sort((a, b) => a - b);
   const distinctUnits = [...new Set(sortedPeriods.map((p) =>
-    periodType === 'semana' ? p.semana : p.mes
-  ))].sort((a, b) => a - b);
+    periodType === 'semana' ? (p.semana ?? p.mes) : (p.mes ?? p.semana)
+  ))].filter((u) => u != null).sort((a, b) => a - b);
 
   // dataTree[year][unit][negocio][val] = amount
   const dataTree = {};
