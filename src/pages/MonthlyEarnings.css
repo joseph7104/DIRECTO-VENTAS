@@ -97,22 +97,15 @@
   margin-bottom: var(--space-6);
 }
 
-/* --- Content grid (table + chart) --- */
+/* --- Content area (full width table) --- */
 .page__content-grid {
-  display: grid;
-  grid-template-columns: 1fr 280px;
-  gap: var(--space-4);
-  align-items: start;
+  display: block;
+  width: 100%;
 }
 
 .page__table-area {
+  width: 100%;
   min-width: 0;
-}
-
-.page__chart-area {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
 }
 
 .page__period-label {

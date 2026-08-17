@@ -2,45 +2,28 @@ import { useState, useEffect, useCallback } from 'react';
 import { Building2, Receipt, Tag } from 'lucide-react';
 import KpiCard from '../components/KpiCard/KpiCard';
 import DataTable from '../components/DataTable/DataTable';
-import DistributionChart from '../components/DistributionChart/DistributionChart';
 import PeriodFilterDropdown from '../components/Filters/PeriodFilterDropdown';
 import {
   LoadingScreen,
   ErrorScreen,
   EmptyScreen,
 } from '../components/Feedback/FeedbackStates';
-import {
-  fetchIngresosCiudad,
-  fetchPeriodosDisponibles,
-} from '../services/ingresosService';
+import { fetchIngresosCiudad } from '../services/ingresosService';
+import { usePeriodType } from '../hooks/usePeriodType';
 import './MonthlyEarnings.css';
 
 export default function IngresosCiudad() {
-  const [selectedPeriods, setSelectedPeriods] = useState([{ anio: 2026, mes: 6 }]);
-  const [availablePeriods, setAvailablePeriods] = useState([]);
+  const { periodType, selectedPeriods, setSelectedPeriods, handlePeriodTypeChange, initialized } = usePeriodType();
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    async function loadPeriods() {
-      try {
-        const periods = await fetchPeriodosDisponibles();
-        if (periods && periods.length > 0) {
-          setAvailablePeriods(periods);
-        }
-      } catch (err) {
-        console.warn('Error loading periods:', err);
-      }
-    }
-    loadPeriods();
-  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchIngresosCiudad(selectedPeriods);
+      const data = await fetchIngresosCiudad(selectedPeriods, periodType);
       setDashboardData(data);
     } catch (err) {
       console.error('Error fetching ciudad data:', err);
@@ -48,11 +31,11 @@ export default function IngresosCiudad() {
     } finally {
       setLoading(false);
     }
-  }, [selectedPeriods]);
+  }, [selectedPeriods, periodType]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (initialized && selectedPeriods.length > 0) loadData();
+  }, [loadData, initialized]);
 
   return (
     <div className="page monthly-page">
@@ -63,16 +46,18 @@ export default function IngresosCiudad() {
             {dashboardData?.meta?.title || 'Ingresos Ciudad'}
           </h2>
           <p className="page__subtitle">
-            {dashboardData?.meta?.subtitle || 'Ventas Mensuales - Ciudad'}
+            {dashboardData?.meta?.subtitle ||
+              (periodType === 'semana' ? 'Ventas Semanales - Ciudad' : 'Ventas Mensuales - Ciudad')}
           </p>
         </div>
 
-        {/* Multi-Period Tree Filter Dropdown (Photo 4) */}
+        {/* Multi-Period Tree Filter Dropdown with Mode Toggle */}
         <div className="page__filters">
           <PeriodFilterDropdown
+            periodType={periodType}
+            onPeriodTypeChange={handlePeriodTypeChange}
             selectedSelections={selectedPeriods}
             onSelectionChange={setSelectedPeriods}
-            availablePeriods={availablePeriods}
           />
         </div>
       </div>
@@ -94,7 +79,7 @@ export default function IngresosCiudad() {
         />
       )}
 
-      {/* MAIN CONTENT (Photo 2 hierarchy) */}
+      {/* MAIN CONTENT */}
       {dashboardData && !error && (
         <>
           <div className="page__kpis">
@@ -134,14 +119,6 @@ export default function IngresosCiudad() {
                 groupHeaders={dashboardData.tableData.groupHeaders}
               />
             </div>
-            <div className="page__chart-area">
-              <DistributionChart
-                title="Distribución Ciudad"
-                data={dashboardData.distribution}
-                type="donut"
-              />
-              <div className="page__period-label">{dashboardData.meta.period}</div>
-            </div>
           </div>
         </>
       )}
@@ -153,7 +130,7 @@ export default function IngresosCiudad() {
           message="No se encontraron registros para los períodos seleccionados."
           actionLabel="Ver Junio 2026"
           onAction={() => {
-            setSelectedPeriods([{ anio: 2026, mes: 6 }]);
+            handlePeriodTypeChange('mes');
           }}
         />
       )}

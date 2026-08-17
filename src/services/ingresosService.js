@@ -15,1303 +15,684 @@ export const MESES = [
   { id: 12, nombre: 'DICIEMBRE', short: 'Dic' },
 ];
 
+// ─── Formatters ────────────────────────────────────────────────────────────────
 const formatSoles = (val) => `S/ ${Math.round(val || 0).toLocaleString('en-US')}`;
-const formatNum = (val) => Math.round(val || 0).toLocaleString('en-US');
-const formatTck = (val) => `S/ ${Number(val || 0).toFixed(1)}`;
+const formatNum   = (val) => Math.round(val || 0).toLocaleString('en-US');
+const formatTck   = (val) => `S/ ${Number(val || 0).toFixed(1)}`;
 
-/**
- * Fetch available periods from DB
- */
-export async function fetchPeriodosDisponibles() {
-  if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase.rpc('get_periodos_disponibles');
-      if (!error && data && data.length > 0) {
-        return data;
-      }
-    } catch (err) {
-      console.warn('Error fetching periodos:', err);
-    }
+// ─── Period key helpers ────────────────────────────────────────────────────────
+const getKey = (p, periodType) =>
+  periodType === 'semana' ? `${p.anio}_sem_${p.semana}` : `${p.anio}_${p.mes}`;
+
+const getPeriodLabel = (sortedPeriods, periodType) => {
+  if (periodType === 'semana') {
+    return sortedPeriods.length === 1
+      ? `Semana ${sortedPeriods[0].semana} ${sortedPeriods[0].anio}`
+      : `${sortedPeriods.length} Semanas Seleccionadas`;
   }
+  return sortedPeriods.length === 1
+    ? `${MESES.find((m) => m.id === sortedPeriods[0].mes)?.nombre} ${sortedPeriods[0].anio}`
+    : `${sortedPeriods.length} Meses Seleccionados`;
+};
 
-  return [
-    { anio: 2026, mes: 8 },
-    { anio: 2026, mes: 7 },
-    { anio: 2026, mes: 6 },
-    { anio: 2026, mes: 5 },
-    { anio: 2026, mes: 4 },
-    { anio: 2026, mes: 3 },
-    { anio: 2026, mes: 2 },
-    { anio: 2026, mes: 1 },
-    { anio: 2025, mes: 12 },
-    { anio: 2025, mes: 11 },
-    { anio: 2025, mes: 10 },
-    { anio: 2025, mes: 9 },
-    { anio: 2025, mes: 8 },
-    { anio: 2025, mes: 7 },
-    { anio: 2025, mes: 6 },
-    { anio: 2025, mes: 5 },
-    { anio: 2025, mes: 4 },
-    { anio: 2025, mes: 3 },
-    { anio: 2025, mes: 2 },
-    { anio: 2025, mes: 1 },
-  ];
+// ─── In-memory cache of full aggregated datasets (5 min TTL) ─────────────────
+let _cacheMensual = null;  // { data, ts }
+let _cacheSemanal = null;
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function getResumenSemanal() {
+  if (_cacheSemanal && Date.now() - _cacheSemanal.ts < CACHE_TTL_MS) {
+    return _cacheSemanal.data;
+  }
+  const { data, error } = await supabase.rpc('get_resumen_semanal_full');
+  if (error) throw new Error(`get_resumen_semanal_full: ${error.message}`);
+  _cacheSemanal = { data: data || [], ts: Date.now() };
+  return _cacheSemanal.data;
 }
 
-/**
- * Helper to generate dynamic table columns and groupHeaders for each selected month + Total
- */
-function generateTableHeaders(sortedPeriods) {
+async function getResumenMensual() {
+  if (_cacheMensual && Date.now() - _cacheMensual.ts < CACHE_TTL_MS) {
+    return _cacheMensual.data;
+  }
+  const { data, error } = await supabase.rpc('get_resumen_mensual_full');
+  if (error) throw new Error(`get_resumen_mensual_full: ${error.message}`);
+  _cacheMensual = { data: data || [], ts: Date.now() };
+  return _cacheMensual.data;
+}
+
+// ─── Available periods from DB (no hardcoding) ────────────────────────────────
+export async function fetchMesesDisponibles() {
+  if (!isSupabaseConfigured) return [];
+  try {
+    const rows = await getResumenMensual();
+    const unique = [];
+    const seen = new Set();
+    rows.forEach((r) => {
+      const key = `${r.anio}_${r.mes}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push({ anio: r.anio, mes: r.mes });
+      }
+    });
+    return unique.sort((a, b) => b.anio !== a.anio ? b.anio - a.anio : b.mes - a.mes);
+  } catch (err) {
+    console.warn('fetchMesesDisponibles fallback to rpc:', err);
+    const { data } = await supabase.rpc('get_meses_disponibles');
+    return data || [];
+  }
+}
+
+export async function fetchSemanasDisponibles() {
+  if (!isSupabaseConfigured) return [];
+  try {
+    const rows = await getResumenSemanal();
+    const unique = [];
+    const seen = new Set();
+    rows.forEach((r) => {
+      const key = `${r.anio}_${r.semana}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push({ anio: r.anio, semana: r.semana });
+      }
+    });
+    return unique.sort((a, b) => b.anio !== a.anio ? b.anio - a.anio : b.semana - a.semana);
+  } catch (err) {
+    console.warn('fetchSemanasDisponibles fallback to rpc:', err);
+    const { data } = await supabase.rpc('get_semanas_disponibles');
+    return data || [];
+  }
+}
+
+// Legacy alias kept for pages that call fetchPeriodosDisponibles
+export async function fetchPeriodosDisponibles() {
+  return fetchMesesDisponibles();
+}
+
+// ─── Table headers builder ─────────────────────────────────────────────────────
+function generateTableHeaders(sortedPeriods, periodType = 'mes') {
   const isMultipleYears = new Set(sortedPeriods.map((p) => p.anio)).size > 1;
+
+  const buildCols = (prefix) => [
+    { key: `ingreso_${prefix}`,   label: 'Ingreso' },
+    { key: `nro_src_${prefix}`,   label: 'Nro. Src' },
+    { key: `tck_prom_${prefix}`,  label: 'Tck. Prom' },
+  ];
+
+  if (periodType === 'semana') {
+    const groupHeaders = [
+      { label: '', colSpan: 1 },
+      ...sortedPeriods.map((p) => ({
+        label: isMultipleYears ? `SEMANA ${p.semana} ${p.anio}` : `SEMANA ${p.semana}`,
+        colSpan: 3,
+        highlight: false,
+        key: getKey(p, periodType),
+      })),
+      { label: 'TOTAL', colSpan: 3, highlight: true, key: 'total' },
+    ];
+    const columns = [
+      { key: 'name', label: 'Nombre Semana Año', width: '220px', fixed: true },
+      ...sortedPeriods.flatMap((p) => buildCols(getKey(p, periodType))),
+      ...buildCols('total'),
+    ];
+    return { groupHeaders, columns };
+  }
 
   const groupHeaders = [
     { label: '', colSpan: 1 },
     ...sortedPeriods.map((p) => {
       const mObj = MESES.find((m) => m.id === p.mes);
-      const label = isMultipleYears
-        ? `${mObj?.nombre || 'MES'} ${p.anio}`
-        : `${mObj?.nombre || 'MES'}`;
-      return { label, colSpan: 3, highlight: false, key: `${p.anio}_${p.mes}` };
+      return {
+        label: isMultipleYears ? `${mObj?.nombre || 'MES'} ${p.anio}` : `${mObj?.nombre || 'MES'}`,
+        colSpan: 3,
+        highlight: false,
+        key: getKey(p, periodType),
+      };
     }),
     { label: 'TOTAL', colSpan: 3, highlight: true, key: 'total' },
   ];
-
   const columns = [
     { key: 'name', label: 'Nombre del mes Año', width: '220px', fixed: true },
+    ...sortedPeriods.flatMap((p) => buildCols(getKey(p, periodType))),
+    ...buildCols('total'),
   ];
-
-  sortedPeriods.forEach((p) => {
-    const keyPrefix = `${p.anio}_${p.mes}`;
-    columns.push(
-      { key: `ingreso_${keyPrefix}`, label: 'Ingreso' },
-      { key: `nro_src_${keyPrefix}`, label: 'Nro. Src' },
-      { key: `tck_prom_${keyPrefix}`, label: 'Tck. Prom' }
-    );
-  });
-
-  columns.push(
-    { key: 'ingreso_total', label: 'Ingreso' },
-    { key: 'nro_src_total', label: 'Nro. Src' },
-    { key: 'tck_prom_total', label: 'Tck. Prom' }
-  );
-
   return { groupHeaders, columns };
 }
 
-/**
- * 1. INGRESOS TOTALES (Foto 1)
- */
-export async function fetchIngresosTotalesMulti(selections = [{ anio: 2026, mes: 6 }]) {
-  const sortedPeriods = [...selections].sort((a, b) =>
-    a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes
-  );
-  const anios = [...new Set(sortedPeriods.map((s) => s.anio))];
-  const meses = [...new Set(sortedPeriods.map((s) => s.mes))];
-
-  if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase.rpc('get_ingresos_totales', {
-        p_anios: anios,
-        p_meses: meses,
-      });
-      if (error) {
-        console.error('Error in get_ingresos_totales RPC:', error);
-      } else if (data) {
-        return buildTotalesMultiDashboard(data, sortedPeriods);
-      }
-    } catch (err) {
-      console.warn('Error fetching ingresos totales RPC:', err);
-    }
-  }
-
-  const fallback = [
-    { anio: 2026, mes: 6, negocio: 'Aeropuerto', val: 'Kusi', ingreso: 887970.0, nro_src: 12194, tck_prom: 72.8 },
-    { anio: 2026, mes: 6, negocio: 'Aeropuerto', val: 'Wari + Wally', ingreso: 728738.64, nro_src: 8968, tck_prom: 81.3 },
-    { anio: 2026, mes: 6, negocio: 'Ciudad', val: 'Destino', ingreso: 511664.35, nro_src: 6322, tck_prom: 80.9 },
-    { anio: 2026, mes: 6, negocio: 'Ciudad', val: 'Urbano', ingreso: 856999.72, nro_src: 15378, tck_prom: 55.7 },
-    { anio: 2026, mes: 6, negocio: 'Aerolíneas', val: 'Jetsmart', ingreso: 165739.0, nro_src: 2856, tck_prom: 58.0 },
-    { anio: 2026, mes: 6, negocio: 'Aerolíneas', val: 'Latam', ingreso: 922356.0, nro_src: 14927, tck_prom: 61.8 },
-    { anio: 2026, mes: 6, negocio: 'Aerolíneas', val: 'Sky', ingreso: 330381.64, nro_src: 5964, tck_prom: 55.4 },
-  ];
-  return buildTotalesMultiDashboard(fallback, sortedPeriods);
+// ─── Normalise negocio/val strings coming from DB ─────────────────────────────
+function normaliseNegocio(raw) {
+  const n = (raw || '').trim().toUpperCase();
+  if (n.includes('AEROPUERTO')) return 'Aeropuerto';
+  if (n === 'CIUDAD' || n === 'URBANO' || n === 'DESTINO') return 'Ciudad';
+  if (n.includes('AEROL')) return 'Aerolíneas';
+  if (n.includes('COSTA') && n.includes('SOL')) return 'Flit - Costa del Sol';
+  if (n.includes('FLIT') && n.includes('DIRECTO')) return 'Flit - Directo';
+  if (n === 'FLIT') return 'Flit';
+  if (n.includes('LOGISTIC')) return 'Logistic';
+  if (n.includes('MIGO')) return 'Migo';
+  return raw;
 }
 
-function buildTotalesMultiDashboard(rows, sortedPeriods) {
+function normaliseVal(rawVal, rawNeg) {
+  const v = (rawVal || '').trim().toUpperCase();
+  const n = (rawNeg || '').trim().toUpperCase();
+  if (v.includes('KUSI')) return 'Kusi';
+  if (v.includes('WARI')) return 'Wari + Wally';
+  if (v.includes('DESTINO') || n === 'DESTINO') return 'Destino';
+  if (v.includes('URBANO') || n === 'URBANO') return 'Urbano';
+  if (v.includes('JETSMART')) return 'Jetsmart';
+  if (v.includes('LATAM')) return 'Latam';
+  if (v.includes('SKY')) return 'Sky';
+  if (v.includes('COSTA') && v.includes('SOL')) return 'Flit - Costa del Sol';
+  if (v.includes('COSTE')) return 'Coste Ventas';
+  if (v.includes('INGRESO')) return 'Ingresos Ventas';
+  if (v === 'FLIT') return 'Flit';
+  if (v.includes('LOGISTIC')) return 'Logistic';
+  if (v.includes('MIGO')) return 'Migo1';
+  return rawVal;
+}
+
+// Filter aggregated rows to only matching selections
+function filterRows(allRows, selections, periodType) {
+  return allRows.filter((r) => {
+    return selections.some((s) => {
+      if (s.anio !== r.anio) return false;
+      return periodType === 'semana' ? s.semana === r.semana : s.mes === r.mes;
+    });
+  });
+}
+
+// ─── Generic accumulator ──────────────────────────────────────────────────────
+function accum(bucket, pKey, ingreso, servicios) {
+  if (!bucket[pKey]) bucket[pKey] = { ingreso: 0, servicios: 0 };
+  bucket[pKey].ingreso   += ingreso;
+  bucket[pKey].servicios += servicios;
+}
+
+// Build formatted cell values for one period bucket
+function cellsForPeriod(bucket, pKey) {
+  const d = bucket[pKey] || { ingreso: 0, servicios: 0 };
+  return {
+    [`ingreso_${pKey}`]:  formatSoles(d.ingreso),
+    [`nro_src_${pKey}`]:  formatNum(d.servicios),
+    [`tck_prom_${pKey}`]: formatTck(d.servicios > 0 ? d.ingreso / d.servicios : 0),
+  };
+}
+
+function totalCells(allPeriodBuckets, sortedPeriods, periodType) {
+  let ing = 0, srv = 0;
+  sortedPeriods.forEach((p) => {
+    const d = allPeriodBuckets[getKey(p, periodType)] || {};
+    ing += d.ingreso || 0;
+    srv += d.servicios || 0;
+  });
+  return {
+    ingreso_total:  formatSoles(ing),
+    nro_src_total:  formatNum(srv),
+    tck_prom_total: formatTck(srv > 0 ? ing / srv : 0),
+    _rawIngreso:    ing,
+    _rawServicios:  srv,
+  };
+}
+
+// ─── 1. INGRESOS TOTALES ──────────────────────────────────────────────────────
+export async function fetchIngresosTotalesMulti(
+  selections = [{ anio: 2026, mes: 6 }],
+  periodType = 'mes'
+) {
+  const sortedPeriods = [...selections].sort((a, b) => {
+    if (a.anio !== b.anio) return a.anio - b.anio;
+    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
+  });
+
+  const allRows = periodType === 'semana'
+    ? await getResumenSemanal(sortedPeriods)
+    : await getResumenMensual(sortedPeriods);
+
+  const rows = filterRows(allRows, sortedPeriods, periodType);
+
   const allowed = {
     Aeropuerto: ['Kusi', 'Wari + Wally'],
-    Ciudad: ['Destino', 'Urbano'],
+    Ciudad:     ['Destino', 'Urbano'],
     Aerolíneas: ['Jetsmart', 'Latam', 'Sky'],
   };
 
-  const { groupHeaders, columns } = generateTableHeaders(sortedPeriods);
-
-  const dataTree = {
-    Aeropuerto: { Kusi: {}, 'Wari + Wally': {} },
-    Ciudad: { Destino: {}, Urbano: {} },
-    Aerolíneas: { Jetsmart: {}, Latam: {}, Sky: {} },
-  };
-
-  const grandTotals = {
-    total: { ingreso: 0, nroSrc: 0 },
-    periods: {},
-  };
-  sortedPeriods.forEach((p) => {
-    grandTotals.periods[`${p.anio}_${p.mes}`] = { ingreso: 0, nroSrc: 0 };
+  // tree: negocio -> val -> pKey -> { ingreso, servicios }
+  const tree = {};
+  Object.keys(allowed).forEach((neg) => {
+    tree[neg] = {};
+    allowed[neg].forEach((v) => { tree[neg][v] = {}; });
   });
 
+  const grandByPeriod = {};
+  sortedPeriods.forEach((p) => { grandByPeriod[getKey(p, periodType)] = { ingreso: 0, servicios: 0 }; });
+
   rows.forEach((r) => {
-    const neg = r.negocio;
-    const val = r.val;
-    const pKey = `${r.anio}_${r.mes}`;
+    const neg = normaliseNegocio(r.negocio);
+    const val = normaliseVal(r.val, r.negocio);
+    const pKey = getKey(r, periodType);
+    const ing = parseFloat(r.total_ingreso) || 0;
+    const srv = parseInt(r.total_servicios, 10) || 0;
 
-    if (allowed[neg] && allowed[neg].includes(val) && grandTotals.periods[pKey]) {
-      const ing = parseFloat(r.ingreso) || 0;
-      const src = parseInt(r.nro_src, 10) || 0;
-
-      if (!dataTree[neg][val][pKey]) {
-        dataTree[neg][val][pKey] = { ingreso: 0, nroSrc: 0 };
-      }
-      dataTree[neg][val][pKey].ingreso += ing;
-      dataTree[neg][val][pKey].nroSrc += src;
-
-      grandTotals.periods[pKey].ingreso += ing;
-      grandTotals.periods[pKey].nroSrc += src;
-
-      grandTotals.total.ingreso += ing;
-      grandTotals.total.nroSrc += src;
+    if (tree[neg]?.[val] !== undefined && grandByPeriod[pKey] !== undefined) {
+      accum(tree[neg][val], pKey, ing, srv);
+      grandByPeriod[pKey].ingreso   += ing;
+      grandByPeriod[pKey].servicios += srv;
     }
   });
 
-  const businessNodes = ['Aeropuerto', 'Ciudad', 'Aerolíneas'].map((negName) => {
-    const valNames = allowed[negName] || [];
-    const negTotals = { total: { ingreso: 0, nroSrc: 0 }, periods: {} };
-    sortedPeriods.forEach((p) => {
-      negTotals.periods[`${p.anio}_${p.mes}`] = { ingreso: 0, nroSrc: 0 };
-    });
+  // Build node tree
+  const businessNodes = Object.keys(allowed).map((negName) => {
+    const negByPeriod = {};
+    sortedPeriods.forEach((p) => { negByPeriod[getKey(p, periodType)] = { ingreso: 0, servicios: 0 }; });
 
-    const valNodes = valNames.map((valName) => {
-      const valRow = {
-        id: `${negName.toLowerCase()}-${valName.toLowerCase()}`,
-        name: valName,
-        level: 2,
-      };
-
-      let valTotalIng = 0;
-      let valTotalSrc = 0;
-
+    const valNodes = allowed[negName].map((valName) => {
+      const vRow = { id: `${negName}-${valName}`, name: valName, level: 2 };
       sortedPeriods.forEach((p) => {
-        const pKey = `${p.anio}_${p.mes}`;
-        const item = dataTree[negName][valName][pKey] || { ingreso: 0, nroSrc: 0 };
-        valTotalIng += item.ingreso;
-        valTotalSrc += item.nroSrc;
-
-        negTotals.periods[pKey].ingreso += item.ingreso;
-        negTotals.periods[pKey].nroSrc += item.nroSrc;
-
-        valRow[`ingreso_${pKey}`] = formatSoles(item.ingreso);
-        valRow[`nro_src_${pKey}`] = formatNum(item.nroSrc);
-        valRow[`tck_prom_${pKey}`] = formatTck(item.nroSrc > 0 ? item.ingreso / item.nroSrc : 0);
+        const pKey = getKey(p, periodType);
+        const d = tree[negName][valName][pKey] || { ingreso: 0, servicios: 0 };
+        negByPeriod[pKey].ingreso   += d.ingreso;
+        negByPeriod[pKey].servicios += d.servicios;
+        Object.assign(vRow, cellsForPeriod(tree[negName][valName], pKey));
       });
-
-      negTotals.total.ingreso += valTotalIng;
-      negTotals.total.nroSrc += valTotalSrc;
-
-      valRow.ingreso_total = formatSoles(valTotalIng);
-      valRow.nro_src_total = formatNum(valTotalSrc);
-      valRow.tck_prom_total = formatTck(valTotalSrc > 0 ? valTotalIng / valTotalSrc : 0);
-      valRow.rawIngreso = valTotalIng;
-
-      return valRow;
+      Object.assign(vRow, totalCells(tree[negName][valName], sortedPeriods, periodType));
+      return vRow;
     });
 
-    const negRow = {
-      id: `business-${negName.toLowerCase()}`,
-      name: negName,
-      level: 1,
-      expandable: true,
-      children: valNodes,
-    };
-
+    const nRow = { id: `neg-${negName}`, name: negName, level: 1, expandable: true, children: valNodes };
     sortedPeriods.forEach((p) => {
-      const pKey = `${p.anio}_${p.mes}`;
-      const pData = negTotals.periods[pKey];
-      negRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-      negRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-      negRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
+      Object.assign(nRow, cellsForPeriod(negByPeriod, getKey(p, periodType)));
     });
-
-    negRow.ingreso_total = formatSoles(negTotals.total.ingreso);
-    negRow.nro_src_total = formatNum(negTotals.total.nroSrc);
-    negRow.tck_prom_total = formatTck(
-      negTotals.total.nroSrc > 0 ? negTotals.total.ingreso / negTotals.total.nroSrc : 0
-    );
-    negRow.rawIngreso = negTotals.total.ingreso;
-
-    return negRow;
+    Object.assign(nRow, totalCells(negByPeriod, sortedPeriods, periodType));
+    return nRow;
   });
 
-  const anioDisplay =
-    new Set(sortedPeriods.map((p) => p.anio)).size === 1
-      ? `${sortedPeriods[0].anio}`
-      : 'Consolidado';
+  const anioLabel = new Set(sortedPeriods.map((p) => p.anio)).size === 1
+    ? `${sortedPeriods[0].anio}` : 'Consolidado';
+  const yearRow = { id: `year-${anioLabel}`, name: anioLabel, level: 0, expandable: true, children: businessNodes };
+  sortedPeriods.forEach((p) => { Object.assign(yearRow, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(yearRow, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  const yearRow = {
-    id: `year-${anioDisplay}`,
-    name: anioDisplay,
-    level: 0,
-    expandable: true,
-    children: businessNodes,
-  };
+  const totalRow = { name: 'Total General' };
+  sortedPeriods.forEach((p) => { Object.assign(totalRow, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(totalRow, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    yearRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    yearRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    yearRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
-
-  yearRow.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  yearRow.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  yearRow.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
-
-  const totalRow = {
-    name: 'Total General',
-  };
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    totalRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    totalRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    totalRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
-  totalRow.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  totalRow.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  totalRow.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
-
-  const distribution = businessNodes.map((b, idx) => ({
-    name: b.name,
-    value: Math.round(b.rawIngreso),
-    color: ['#38BDF8', '#0F172A', '#0EA5E9'][idx] || '#64748B',
-  }));
-
-  const periodTitle =
-    sortedPeriods.length === 1
-      ? `${MESES.find((m) => m.id === sortedPeriods[0].mes)?.nombre} ${sortedPeriods[0].anio}`
-      : `${sortedPeriods.length} Meses Seleccionados`;
+  const gt = totalCells(grandByPeriod, sortedPeriods, periodType);
+  const { groupHeaders, columns } = generateTableHeaders(sortedPeriods, periodType);
+  const periodTitle = getPeriodLabel(sortedPeriods, periodType);
 
   return {
     meta: {
       title: 'Ingresos por Negocio',
-      subtitle: `Ventas Mensuales - Resumen de ${periodTitle}`,
+      subtitle: `${periodType === 'semana' ? 'Ventas Semanales' : 'Ventas Mensuales'} - ${periodTitle}`,
       period: periodTitle,
     },
     kpis: {
-      ingresoTotal: {
-        label: 'INGRESO TOTAL',
-        value: grandTotals.total.ingreso,
-        formatted: formatSoles(grandTotals.total.ingreso),
-        change: '+12.4%',
-        changeLabel: 'vs Mes Anterior',
-        trend: 'up',
-      },
-      nroTransacciones: {
-        label: 'NRO. TRANSACCIONES',
-        value: grandTotals.total.nroSrc,
-        formatted: formatNum(grandTotals.total.nroSrc),
-        change: '+8.2%',
-        changeLabel: 'vs Mes Anterior',
-        trend: 'up',
-      },
-      ticketPromedio: {
-        label: 'TCK. PROMEDIO',
-        value: grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0,
-        formatted: formatTck(
-          grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-        ),
-        change: 'Estable',
-        changeLabel: '',
-        trend: 'neutral',
-      },
+      ingresoTotal:     { label: 'INGRESO TOTAL',        value: gt._rawIngreso,    formatted: formatSoles(gt._rawIngreso),    change: '', changeLabel: '', trend: 'up' },
+      nroTransacciones: { label: 'NRO. TRANSACCIONES',   value: gt._rawServicios,  formatted: formatNum(gt._rawServicios),    change: '', changeLabel: '', trend: 'up' },
+      ticketPromedio:   { label: 'TCK. PROMEDIO',        value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
     },
-    tableData: {
-      columns,
-      groupHeaders,
-      rows: [yearRow],
-      totalRow,
-    },
-    distribution,
+    tableData: { columns, groupHeaders, rows: [yearRow], totalRow },
   };
 }
 
-/**
- * 2. INGRESOS ORIGEN (Foto Origen: Aeropuerto -> Kusi, Wari + Wally -> tipo_de_cliente)
- */
-export async function fetchIngresosOrigen(selections = [{ anio: 2026, mes: 6 }]) {
-  const sortedPeriods = [...selections].sort((a, b) =>
-    a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes
-  );
-  const anios = [...new Set(sortedPeriods.map((s) => s.anio))];
-  const meses = [...new Set(sortedPeriods.map((s) => s.mes))];
-
-  if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase.rpc('get_ingresos_origen', {
-        p_anios: anios,
-        p_meses: meses,
-      });
-      if (error) {
-        console.error('Error in get_ingresos_origen RPC:', error);
-      } else if (data) {
-        return buildOrigenMultiDashboard(data, sortedPeriods);
-      }
-    } catch (err) {
-      console.warn('Error fetching ingresos origen RPC:', err);
-    }
-  }
-
-  const fallback = [
-    { anio: 2026, mes: 6, val: 'Kusi', tipo_cliente: 'PARTICULAR', ingreso: 887970.0, nro_src: 12194, tck_prom: 72.8 },
-    { anio: 2026, mes: 6, val: 'Wari + Wally', tipo_cliente: 'CORPORATIVO', ingreso: 353231.9, nro_src: 4454, tck_prom: 79.3 },
-    { anio: 2026, mes: 6, val: 'Wari + Wally', tipo_cliente: 'PARTICULAR', ingreso: 375506.74, nro_src: 4514, tck_prom: 83.2 },
-  ];
-  return buildOrigenMultiDashboard(fallback, sortedPeriods);
-}
-
-function buildOrigenMultiDashboard(rows, sortedPeriods) {
-  const { groupHeaders, columns } = generateTableHeaders(sortedPeriods);
-
-  const dataTree = {
-    Kusi: { CORPORATIVO: {}, PARTICULAR: {} },
-    'Wari + Wally': { CORPORATIVO: {}, PARTICULAR: {} },
-  };
-
-  const grandTotals = {
-    total: { ingreso: 0, nroSrc: 0 },
-    periods: {},
-  };
-  sortedPeriods.forEach((p) => {
-    grandTotals.periods[`${p.anio}_${p.mes}`] = { ingreso: 0, nroSrc: 0 };
+// ─── 2. INGRESOS ORIGEN ───────────────────────────────────────────────────────
+export async function fetchIngresosOrigen(
+  selections = [{ anio: 2026, mes: 6 }],
+  periodType = 'mes'
+) {
+  const sortedPeriods = [...selections].sort((a, b) => {
+    if (a.anio !== b.anio) return a.anio - b.anio;
+    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
   });
 
+  const allRows = periodType === 'semana'
+    ? await getResumenSemanal(sortedPeriods)
+    : await getResumenMensual(sortedPeriods);
+
+  const rows = filterRows(allRows, sortedPeriods, periodType);
+
+  // Structure: Aeropuerto > {Kusi, Wari+Wally} > {PARTICULAR, CORPORATIVO}
+  const tree = { Kusi: {}, 'Wari + Wally': {} };
+  const grandByPeriod = {};
+  sortedPeriods.forEach((p) => { grandByPeriod[getKey(p, periodType)] = { ingreso: 0, servicios: 0 }; });
+
   rows.forEach((r) => {
-    const val = r.val;
-    const tipo = r.tipo_cliente || 'PARTICULAR';
-    const pKey = `${r.anio}_${r.mes}`;
-
-    if (dataTree[val] && grandTotals.periods[pKey]) {
-      const ing = parseFloat(r.ingreso) || 0;
-      const src = parseInt(r.nro_src, 10) || 0;
-
-      if (!dataTree[val][tipo]) {
-        dataTree[val][tipo] = {};
-      }
-      if (!dataTree[val][tipo][pKey]) {
-        dataTree[val][tipo][pKey] = { ingreso: 0, nroSrc: 0 };
-      }
-      dataTree[val][tipo][pKey].ingreso += ing;
-      dataTree[val][tipo][pKey].nroSrc += src;
-
-      grandTotals.periods[pKey].ingreso += ing;
-      grandTotals.periods[pKey].nroSrc += src;
-
-      grandTotals.total.ingreso += ing;
-      grandTotals.total.nroSrc += src;
-    }
+    const neg = normaliseNegocio(r.negocio);
+    if (neg !== 'Aeropuerto') return;
+    const val = normaliseVal(r.val, r.negocio);
+    if (!tree[val]) return;
+    const pKey = getKey(r, periodType);
+    if (grandByPeriod[pKey] === undefined) return;
+    const tipo = (r.tipo_de_cliente || r.tipo_cliente || 'PARTICULAR').toString().toUpperCase().trim() || 'PARTICULAR';
+    const ing = parseFloat(r.total_ingreso) || 0;
+    const srv = parseInt(r.total_servicios, 10) || 0;
+    if (!tree[val][tipo]) tree[val][tipo] = {};
+    accum(tree[val][tipo], pKey, ing, srv);
+    grandByPeriod[pKey].ingreso   += ing;
+    grandByPeriod[pKey].servicios += srv;
   });
 
   const valNodes = ['Kusi', 'Wari + Wally'].map((vName) => {
-    const clientTypes = vName === 'Kusi' ? ['PARTICULAR'] : ['CORPORATIVO', 'PARTICULAR'];
-    const valTotals = { total: { ingreso: 0, nroSrc: 0 }, periods: {} };
-    sortedPeriods.forEach((p) => {
-      valTotals.periods[`${p.anio}_${p.mes}`] = { ingreso: 0, nroSrc: 0 };
-    });
+    const vByPeriod = {};
+    sortedPeriods.forEach((p) => { vByPeriod[getKey(p, periodType)] = { ingreso: 0, servicios: 0 }; });
 
-    const clientNodes = clientTypes.map((cName) => {
-      const cRow = {
-        id: `origen-${vName.toLowerCase()}-${cName.toLowerCase()}`,
-        name: cName,
-        level: 3,
-      };
-
-      let cTotalIng = 0;
-      let cTotalSrc = 0;
-
+    const tipos = vName === 'Kusi' ? ['PARTICULAR'] : ['CORPORATIVO', 'PARTICULAR'];
+    const clientNodes = tipos.map((cName) => {
+      const cRow = { id: `origen-${vName}-${cName}`, name: cName, level: 3 };
       sortedPeriods.forEach((p) => {
-        const pKey = `${p.anio}_${p.mes}`;
-        const item = (dataTree[vName] && dataTree[vName][cName] && dataTree[vName][cName][pKey]) || {
-          ingreso: 0,
-          nroSrc: 0,
-        };
-        cTotalIng += item.ingreso;
-        cTotalSrc += item.nroSrc;
-
-        valTotals.periods[pKey].ingreso += item.ingreso;
-        valTotals.periods[pKey].nroSrc += item.nroSrc;
-
-        cRow[`ingreso_${pKey}`] = formatSoles(item.ingreso);
-        cRow[`nro_src_${pKey}`] = formatNum(item.nroSrc);
-        cRow[`tck_prom_${pKey}`] = formatTck(item.nroSrc > 0 ? item.ingreso / item.nroSrc : 0);
+        const pKey = getKey(p, periodType);
+        const d = tree[vName]?.[cName]?.[pKey] || { ingreso: 0, servicios: 0 };
+        vByPeriod[pKey].ingreso   += d.ingreso;
+        vByPeriod[pKey].servicios += d.servicios;
+        Object.assign(cRow, cellsForPeriod(tree[vName]?.[cName] || {}, pKey));
       });
-
-      valTotals.total.ingreso += cTotalIng;
-      valTotals.total.nroSrc += cTotalSrc;
-
-      cRow.ingreso_total = formatSoles(cTotalIng);
-      cRow.nro_src_total = formatNum(cTotalSrc);
-      cRow.tck_prom_total = formatTck(cTotalSrc > 0 ? cTotalIng / cTotalSrc : 0);
+      Object.assign(cRow, totalCells(tree[vName]?.[cName] || {}, sortedPeriods, periodType));
       return cRow;
     });
 
-    const vRow = {
-      id: `origen-${vName.toLowerCase()}`,
-      name: vName,
-      level: 2,
-      expandable: true,
-      children: clientNodes,
-    };
-
-    sortedPeriods.forEach((p) => {
-      const pKey = `${p.anio}_${p.mes}`;
-      const pData = valTotals.periods[pKey];
-      vRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-      vRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-      vRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-    });
-
-    vRow.ingreso_total = formatSoles(valTotals.total.ingreso);
-    vRow.nro_src_total = formatNum(valTotals.total.nroSrc);
-    vRow.tck_prom_total = formatTck(
-      valTotals.total.nroSrc > 0 ? valTotals.total.ingreso / valTotals.total.nroSrc : 0
-    );
-    vRow.rawIngreso = valTotals.total.ingreso;
-
+    const vRow = { id: `origen-${vName}`, name: vName, level: 2, expandable: true, children: clientNodes };
+    sortedPeriods.forEach((p) => { Object.assign(vRow, cellsForPeriod(vByPeriod, getKey(p, periodType))); });
+    Object.assign(vRow, totalCells(vByPeriod, sortedPeriods, periodType));
     return vRow;
   });
 
-  const aeropNode = {
-    id: 'business-aeropuerto',
-    name: 'Aeropuerto',
-    level: 1,
-    expandable: true,
-    children: valNodes,
-  };
+  const aeropNode = { id: 'neg-aeropuerto', name: 'Aeropuerto', level: 1, expandable: true, children: valNodes };
+  sortedPeriods.forEach((p) => { Object.assign(aeropNode, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(aeropNode, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    aeropNode[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    aeropNode[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    aeropNode[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
+  const anioLabel = new Set(sortedPeriods.map((p) => p.anio)).size === 1 ? `${sortedPeriods[0].anio}` : 'Consolidado';
+  const yearRow = { id: `year-${anioLabel}`, name: anioLabel, level: 0, expandable: true, children: [aeropNode] };
+  sortedPeriods.forEach((p) => { Object.assign(yearRow, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(yearRow, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  aeropNode.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  aeropNode.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  aeropNode.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
+  const totalRow = { name: 'Total Aeropuerto' };
+  sortedPeriods.forEach((p) => { Object.assign(totalRow, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(totalRow, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  const anioDisplay =
-    new Set(sortedPeriods.map((p) => p.anio)).size === 1
-      ? `${sortedPeriods[0].anio}`
-      : 'Consolidado';
-
-  const yearRow = {
-    id: `year-${anioDisplay}`,
-    name: anioDisplay,
-    level: 0,
-    expandable: true,
-    children: [aeropNode],
-  };
-
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    yearRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    yearRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    yearRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
-
-  yearRow.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  yearRow.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  yearRow.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
-
-  const totalRow = {
-    name: 'Total Aeropuerto',
-  };
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    totalRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    totalRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    totalRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
-  totalRow.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  totalRow.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  totalRow.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
-
-  const distribution = valNodes.map((v, idx) => ({
-    name: v.name,
-    value: Math.round(v.rawIngreso),
-    color: ['#38BDF8', '#0F172A'][idx] || '#0EA5E9',
-  }));
-
-  const periodTitle =
-    sortedPeriods.length === 1
-      ? `${MESES.find((m) => m.id === sortedPeriods[0].mes)?.nombre} ${sortedPeriods[0].anio}`
-      : `${sortedPeriods.length} Meses Seleccionados`;
+  const gt = totalCells(grandByPeriod, sortedPeriods, periodType);
+  const { groupHeaders, columns } = generateTableHeaders(sortedPeriods, periodType);
+  const periodTitle = getPeriodLabel(sortedPeriods, periodType);
 
   return {
-    meta: {
-      title: 'Ingresos Origen (Aeropuerto)',
-      subtitle: `Ventas Mensuales - Aeropuerto por Kusi, Wari + Wally y Tipo de Cliente (${periodTitle})`,
-      period: periodTitle,
-    },
+    meta: { title: 'Ingresos Origen (Aeropuerto)', subtitle: `Aeropuerto - Kusi, Wari + Wally y Tipo Cliente (${periodTitle})`, period: periodTitle },
     kpis: {
-      ingresoTotal: {
-        label: 'INGRESO ORIGEN',
-        value: grandTotals.total.ingreso,
-        formatted: formatSoles(grandTotals.total.ingreso),
-        change: '+11.2%',
-        changeLabel: 'vs Mes Anterior',
-        trend: 'up',
-      },
-      nroTransacciones: {
-        label: 'NRO. TRANSACCIONES',
-        value: grandTotals.total.nroSrc,
-        formatted: formatNum(grandTotals.total.nroSrc),
-        change: '+7.8%',
-        changeLabel: 'vs Mes Anterior',
-        trend: 'up',
-      },
-      ticketPromedio: {
-        label: 'TCK. PROMEDIO',
-        value: grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0,
-        formatted: formatTck(
-          grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-        ),
-        change: 'Estable',
-        changeLabel: '',
-        trend: 'neutral',
-      },
+      ingresoTotal:     { label: 'INGRESO ORIGEN',       value: gt._rawIngreso,   formatted: formatSoles(gt._rawIngreso),  change: '', changeLabel: '', trend: 'up' },
+      nroTransacciones: { label: 'NRO. TRANSACCIONES',   value: gt._rawServicios, formatted: formatNum(gt._rawServicios),  change: '', changeLabel: '', trend: 'up' },
+      ticketPromedio:   { label: 'TCK. PROMEDIO',        value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
     },
-    tableData: {
-      columns,
-      groupHeaders,
-      rows: [yearRow],
-      totalRow,
-    },
-    distribution,
+    tableData: { columns, groupHeaders, rows: [yearRow], totalRow },
   };
 }
 
-/**
- * 3. INGRESOS CIUDAD (Foto 2: Ciudad -> Destino, Urbano -> tipo_de_cliente)
- */
-export async function fetchIngresosCiudad(selections = [{ anio: 2026, mes: 6 }]) {
-  const sortedPeriods = [...selections].sort((a, b) =>
-    a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes
-  );
-  const anios = [...new Set(sortedPeriods.map((s) => s.anio))];
-  const meses = [...new Set(sortedPeriods.map((s) => s.mes))];
-
-  if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase.rpc('get_ingresos_ciudad', {
-        p_anios: anios,
-        p_meses: meses,
-      });
-      if (error) {
-        console.error('Error in get_ingresos_ciudad RPC:', error);
-      } else if (data) {
-        return buildCiudadMultiDashboard(data, sortedPeriods);
-      }
-    } catch (err) {
-      console.warn('Error fetching ingresos ciudad RPC:', err);
-    }
-  }
-
-  const fallback = [
-    { anio: 2026, mes: 6, val: 'Destino', tipo_cliente: 'CORPORATIVO', ingreso: 326420.6, nro_src: 4140, tck_prom: 78.8 },
-    { anio: 2026, mes: 6, val: 'Destino', tipo_cliente: 'PARTICULAR', ingreso: 185243.75, nro_src: 2182, tck_prom: 84.9 },
-    { anio: 2026, mes: 6, val: 'Urbano', tipo_cliente: 'CORPORATIVO', ingreso: 761689.08, nro_src: 13194, tck_prom: 57.7 },
-    { anio: 2026, mes: 6, val: 'Urbano', tipo_cliente: 'PARTICULAR', ingreso: 95310.64, nro_src: 2184, tck_prom: 43.6 },
-  ];
-  return buildCiudadMultiDashboard(fallback, sortedPeriods);
-}
-
-function buildCiudadMultiDashboard(rows, sortedPeriods) {
-  const { groupHeaders, columns } = generateTableHeaders(sortedPeriods);
-
-  const dataTree = {
-    Destino: { CORPORATIVO: {}, PARTICULAR: {} },
-    Urbano: { CORPORATIVO: {}, PARTICULAR: {} },
-  };
-
-  const grandTotals = {
-    total: { ingreso: 0, nroSrc: 0 },
-    periods: {},
-  };
-  sortedPeriods.forEach((p) => {
-    grandTotals.periods[`${p.anio}_${p.mes}`] = { ingreso: 0, nroSrc: 0 };
+// ─── 3. INGRESOS CIUDAD ───────────────────────────────────────────────────────
+export async function fetchIngresosCiudad(
+  selections = [{ anio: 2026, mes: 6 }],
+  periodType = 'mes'
+) {
+  const sortedPeriods = [...selections].sort((a, b) => {
+    if (a.anio !== b.anio) return a.anio - b.anio;
+    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
   });
 
+  const allRows = periodType === 'semana'
+    ? await getResumenSemanal(sortedPeriods)
+    : await getResumenMensual(sortedPeriods);
+
+  const rows = filterRows(allRows, sortedPeriods, periodType);
+
+  const tree = { Destino: {}, Urbano: {} };
+  const grandByPeriod = {};
+  sortedPeriods.forEach((p) => { grandByPeriod[getKey(p, periodType)] = { ingreso: 0, servicios: 0 }; });
+
   rows.forEach((r) => {
-    const val = r.val;
-    const tipo = r.tipo_cliente || 'PARTICULAR';
-    const pKey = `${r.anio}_${r.mes}`;
-
-    if (dataTree[val] && dataTree[val][tipo] && grandTotals.periods[pKey]) {
-      const ing = parseFloat(r.ingreso) || 0;
-      const src = parseInt(r.nro_src, 10) || 0;
-
-      if (!dataTree[val][tipo][pKey]) {
-        dataTree[val][tipo][pKey] = { ingreso: 0, nroSrc: 0 };
-      }
-      dataTree[val][tipo][pKey].ingreso += ing;
-      dataTree[val][tipo][pKey].nroSrc += src;
-
-      grandTotals.periods[pKey].ingreso += ing;
-      grandTotals.periods[pKey].nroSrc += src;
-
-      grandTotals.total.ingreso += ing;
-      grandTotals.total.nroSrc += src;
-    }
+    const neg = normaliseNegocio(r.negocio);
+    if (neg !== 'Ciudad') return;
+    const val = normaliseVal(r.val, r.negocio);
+    if (!tree[val]) return;
+    const pKey = getKey(r, periodType);
+    if (grandByPeriod[pKey] === undefined) return;
+    const tipo = (r.tipo_de_cliente || r.tipo_cliente || 'PARTICULAR').toString().toUpperCase().trim() || 'PARTICULAR';
+    const ing = parseFloat(r.total_ingreso) || 0;
+    const srv = parseInt(r.total_servicios, 10) || 0;
+    if (!tree[val][tipo]) tree[val][tipo] = {};
+    accum(tree[val][tipo], pKey, ing, srv);
+    grandByPeriod[pKey].ingreso   += ing;
+    grandByPeriod[pKey].servicios += srv;
   });
 
   const valNodes = ['Destino', 'Urbano'].map((vName) => {
-    const clientTypes = ['CORPORATIVO', 'PARTICULAR'];
-    const valTotals = { total: { ingreso: 0, nroSrc: 0 }, periods: {} };
-    sortedPeriods.forEach((p) => {
-      valTotals.periods[`${p.anio}_${p.mes}`] = { ingreso: 0, nroSrc: 0 };
-    });
+    const vByPeriod = {};
+    sortedPeriods.forEach((p) => { vByPeriod[getKey(p, periodType)] = { ingreso: 0, servicios: 0 }; });
 
-    const clientNodes = clientTypes.map((cName) => {
-      const cRow = {
-        id: `ciudad-${vName.toLowerCase()}-${cName.toLowerCase()}`,
-        name: cName,
-        level: 3,
-      };
-
-      let cTotalIng = 0;
-      let cTotalSrc = 0;
-
+    const tipos = vName === 'Destino' ? ['PARTICULAR'] : ['CORPORATIVO', 'PARTICULAR'];
+    const clientNodes = tipos.map((cName) => {
+      const cRow = { id: `ciudad-${vName}-${cName}`, name: cName, level: 3 };
       sortedPeriods.forEach((p) => {
-        const pKey = `${p.anio}_${p.mes}`;
-        const item = dataTree[vName][cName][pKey] || { ingreso: 0, nroSrc: 0 };
-        cTotalIng += item.ingreso;
-        cTotalSrc += item.nroSrc;
-
-        valTotals.periods[pKey].ingreso += item.ingreso;
-        valTotals.periods[pKey].nroSrc += item.nroSrc;
-
-        cRow[`ingreso_${pKey}`] = formatSoles(item.ingreso);
-        cRow[`nro_src_${pKey}`] = formatNum(item.nroSrc);
-        cRow[`tck_prom_${pKey}`] = formatTck(item.nroSrc > 0 ? item.ingreso / item.nroSrc : 0);
+        const pKey = getKey(p, periodType);
+        const d = tree[vName]?.[cName]?.[pKey] || { ingreso: 0, servicios: 0 };
+        vByPeriod[pKey].ingreso   += d.ingreso;
+        vByPeriod[pKey].servicios += d.servicios;
+        Object.assign(cRow, cellsForPeriod(tree[vName]?.[cName] || {}, pKey));
       });
-
-      valTotals.total.ingreso += cTotalIng;
-      valTotals.total.nroSrc += cTotalSrc;
-
-      cRow.ingreso_total = formatSoles(cTotalIng);
-      cRow.nro_src_total = formatNum(cTotalSrc);
-      cRow.tck_prom_total = formatTck(cTotalSrc > 0 ? cTotalIng / cTotalSrc : 0);
+      Object.assign(cRow, totalCells(tree[vName]?.[cName] || {}, sortedPeriods, periodType));
       return cRow;
     });
 
-    const vRow = {
-      id: `ciudad-${vName.toLowerCase()}`,
-      name: vName,
-      level: 2,
-      expandable: true,
-      children: clientNodes,
-    };
-
-    sortedPeriods.forEach((p) => {
-      const pKey = `${p.anio}_${p.mes}`;
-      const pData = valTotals.periods[pKey];
-      vRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-      vRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-      vRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-    });
-
-    vRow.ingreso_total = formatSoles(valTotals.total.ingreso);
-    vRow.nro_src_total = formatNum(valTotals.total.nroSrc);
-    vRow.tck_prom_total = formatTck(
-      valTotals.total.nroSrc > 0 ? valTotals.total.ingreso / valTotals.total.nroSrc : 0
-    );
-    vRow.rawIngreso = valTotals.total.ingreso;
-
+    const vRow = { id: `ciudad-${vName}`, name: vName, level: 2, expandable: true, children: clientNodes };
+    sortedPeriods.forEach((p) => { Object.assign(vRow, cellsForPeriod(vByPeriod, getKey(p, periodType))); });
+    Object.assign(vRow, totalCells(vByPeriod, sortedPeriods, periodType));
     return vRow;
   });
 
-  const ciudadNode = {
-    id: 'business-ciudad',
-    name: 'Ciudad',
-    level: 1,
-    expandable: true,
-    children: valNodes,
-  };
+  const ciudadNode = { id: 'neg-ciudad', name: 'Ciudad', level: 1, expandable: true, children: valNodes };
+  sortedPeriods.forEach((p) => { Object.assign(ciudadNode, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(ciudadNode, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    ciudadNode[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    ciudadNode[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    ciudadNode[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
+  const anioLabel = new Set(sortedPeriods.map((p) => p.anio)).size === 1 ? `${sortedPeriods[0].anio}` : 'Consolidado';
+  const yearRow = { id: `year-${anioLabel}`, name: anioLabel, level: 0, expandable: true, children: [ciudadNode] };
+  sortedPeriods.forEach((p) => { Object.assign(yearRow, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(yearRow, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  ciudadNode.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  ciudadNode.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  ciudadNode.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
+  const totalRow = { name: 'Total Ciudad' };
+  sortedPeriods.forEach((p) => { Object.assign(totalRow, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(totalRow, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  const anioDisplay =
-    new Set(sortedPeriods.map((p) => p.anio)).size === 1
-      ? `${sortedPeriods[0].anio}`
-      : 'Consolidado';
-
-  const yearRow = {
-    id: `year-${anioDisplay}`,
-    name: anioDisplay,
-    level: 0,
-    expandable: true,
-    children: [ciudadNode],
-  };
-
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    yearRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    yearRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    yearRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
-
-  yearRow.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  yearRow.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  yearRow.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
-
-  const totalRow = {
-    name: 'Total Ciudad',
-  };
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    totalRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    totalRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    totalRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
-  totalRow.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  totalRow.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  totalRow.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
-
-  const distribution = valNodes.map((v, idx) => ({
-    name: v.name,
-    value: Math.round(v.rawIngreso),
-    color: ['#0EA5E9', '#0F172A'][idx] || '#64748B',
-  }));
-
-  const periodTitle =
-    sortedPeriods.length === 1
-      ? `${MESES.find((m) => m.id === sortedPeriods[0].mes)?.nombre} ${sortedPeriods[0].anio}`
-      : `${sortedPeriods.length} Meses Seleccionados`;
+  const gt = totalCells(grandByPeriod, sortedPeriods, periodType);
+  const { groupHeaders, columns } = generateTableHeaders(sortedPeriods, periodType);
+  const periodTitle = getPeriodLabel(sortedPeriods, periodType);
 
   return {
-    meta: {
-      title: 'Ingresos Ciudad',
-      subtitle: `Ventas Mensuales - Ciudad por Destino, Urbano y Tipo de Cliente (${periodTitle})`,
-      period: periodTitle,
-    },
+    meta: { title: 'Ingresos Ciudad', subtitle: `Ciudad - Destino y Urbano por Tipo Cliente (${periodTitle})`, period: periodTitle },
     kpis: {
-      ingresoTotal: {
-        label: 'INGRESO CIUDAD',
-        value: grandTotals.total.ingreso,
-        formatted: formatSoles(grandTotals.total.ingreso),
-        change: '+9.5%',
-        changeLabel: 'vs Mes Anterior',
-        trend: 'up',
-      },
-      nroTransacciones: {
-        label: 'NRO. TRANSACCIONES',
-        value: grandTotals.total.nroSrc,
-        formatted: formatNum(grandTotals.total.nroSrc),
-        change: '+6.1%',
-        changeLabel: 'vs Mes Anterior',
-        trend: 'up',
-      },
-      ticketPromedio: {
-        label: 'TCK. PROMEDIO',
-        value: grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0,
-        formatted: formatTck(
-          grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-        ),
-        change: 'Estable',
-        changeLabel: '',
-        trend: 'neutral',
-      },
+      ingresoTotal:     { label: 'INGRESO CIUDAD',       value: gt._rawIngreso,   formatted: formatSoles(gt._rawIngreso),  change: '', changeLabel: '', trend: 'up' },
+      nroTransacciones: { label: 'NRO. TRANSACCIONES',   value: gt._rawServicios, formatted: formatNum(gt._rawServicios),  change: '', changeLabel: '', trend: 'up' },
+      ticketPromedio:   { label: 'TCK. PROMEDIO',        value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
     },
-    tableData: {
-      columns,
-      groupHeaders,
-      rows: [yearRow],
-      totalRow,
-    },
-    distribution,
+    tableData: { columns, groupHeaders, rows: [yearRow], totalRow },
   };
 }
 
-/**
- * 4. INGRESOS AEROLÍNEAS (Foto Aerolíneas: Aerolíneas -> Jetsmart, Latam, Sky [Hasta nivel Val])
- */
-export async function fetchIngresosAerolineas(selections = [{ anio: 2026, mes: 6 }]) {
-  const sortedPeriods = [...selections].sort((a, b) =>
-    a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes
-  );
-  const anios = [...new Set(sortedPeriods.map((s) => s.anio))];
-  const meses = [...new Set(sortedPeriods.map((s) => s.mes))];
-
-  if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase.rpc('get_ingresos_aerolineas', {
-        p_anios: anios,
-        p_meses: meses,
-      });
-      if (error) {
-        console.error('Error in get_ingresos_aerolineas RPC:', error);
-      } else if (data) {
-        return buildAerolineasMultiDashboard(data, sortedPeriods);
-      }
-    } catch (err) {
-      console.warn('Error fetching ingresos aerolíneas RPC:', err);
-    }
-  }
-
-  const fallback = [
-    { anio: 2026, mes: 6, val: 'Jetsmart', ingreso: 165739.0, nro_src: 2856, tck_prom: 58.0 },
-    { anio: 2026, mes: 6, val: 'Latam', ingreso: 922356.0, nro_src: 14927, tck_prom: 61.8 },
-    { anio: 2026, mes: 6, val: 'Sky', ingreso: 330381.64, nro_src: 5964, tck_prom: 55.4 },
-  ];
-  return buildAerolineasMultiDashboard(fallback, sortedPeriods);
-}
-
-function buildAerolineasMultiDashboard(rows, sortedPeriods) {
-  const { groupHeaders, columns } = generateTableHeaders(sortedPeriods);
-
-  const dataTree = {
-    Jetsmart: {},
-    Latam: {},
-    Sky: {},
-  };
-
-  const grandTotals = {
-    total: { ingreso: 0, nroSrc: 0 },
-    periods: {},
-  };
-  sortedPeriods.forEach((p) => {
-    grandTotals.periods[`${p.anio}_${p.mes}`] = { ingreso: 0, nroSrc: 0 };
+// ─── 4. INGRESOS AEROLÍNEAS ───────────────────────────────────────────────────
+export async function fetchIngresosAerolineas(
+  selections = [{ anio: 2026, mes: 6 }],
+  periodType = 'mes'
+) {
+  const sortedPeriods = [...selections].sort((a, b) => {
+    if (a.anio !== b.anio) return a.anio - b.anio;
+    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
   });
 
+  const allRows = periodType === 'semana'
+    ? await getResumenSemanal(sortedPeriods)
+    : await getResumenMensual(sortedPeriods);
+
+  const rows = filterRows(allRows, sortedPeriods, periodType);
+
+  const tree = { Jetsmart: {}, Latam: {}, Sky: {} };
+  const grandByPeriod = {};
+  sortedPeriods.forEach((p) => { grandByPeriod[getKey(p, periodType)] = { ingreso: 0, servicios: 0 }; });
+
   rows.forEach((r) => {
-    const val = r.val;
-    const pKey = `${r.anio}_${r.mes}`;
-
-    if (dataTree[val] && grandTotals.periods[pKey]) {
-      const ing = parseFloat(r.ingreso) || 0;
-      const src = parseInt(r.nro_src, 10) || 0;
-
-      if (!dataTree[val][pKey]) {
-        dataTree[val][pKey] = { ingreso: 0, nroSrc: 0 };
-      }
-      dataTree[val][pKey].ingreso += ing;
-      dataTree[val][pKey].nroSrc += src;
-
-      grandTotals.periods[pKey].ingreso += ing;
-      grandTotals.periods[pKey].nroSrc += src;
-
-      grandTotals.total.ingreso += ing;
-      grandTotals.total.nroSrc += src;
-    }
+    const neg = normaliseNegocio(r.negocio);
+    if (neg !== 'Aerolíneas') return;
+    const val = normaliseVal(r.val, r.negocio);
+    if (!tree[val]) return;
+    const pKey = getKey(r, periodType);
+    if (grandByPeriod[pKey] === undefined) return;
+    const ing = parseFloat(r.total_ingreso) || 0;
+    const srv = parseInt(r.total_servicios, 10) || 0;
+    accum(tree[val], pKey, ing, srv);
+    grandByPeriod[pKey].ingreso   += ing;
+    grandByPeriod[pKey].servicios += srv;
   });
 
   const valNodes = ['Jetsmart', 'Latam', 'Sky'].map((vName) => {
-    const vRow = {
-      id: `aerolinea-${vName.toLowerCase()}`,
-      name: vName,
-      level: 2,
-    };
-
-    let vTotalIng = 0;
-    let vTotalSrc = 0;
-
-    sortedPeriods.forEach((p) => {
-      const pKey = `${p.anio}_${p.mes}`;
-      const item = dataTree[vName][pKey] || { ingreso: 0, nroSrc: 0 };
-      vTotalIng += item.ingreso;
-      vTotalSrc += item.nroSrc;
-
-      vRow[`ingreso_${pKey}`] = formatSoles(item.ingreso);
-      vRow[`nro_src_${pKey}`] = formatNum(item.nroSrc);
-      vRow[`tck_prom_${pKey}`] = formatTck(item.nroSrc > 0 ? item.ingreso / item.nroSrc : 0);
-    });
-
-    vRow.ingreso_total = formatSoles(vTotalIng);
-    vRow.nro_src_total = formatNum(vTotalSrc);
-    vRow.tck_prom_total = formatTck(vTotalSrc > 0 ? vTotalIng / vTotalSrc : 0);
-    vRow.rawIngreso = vTotalIng;
-
+    const vRow = { id: `aero-${vName}`, name: vName, level: 2 };
+    sortedPeriods.forEach((p) => { Object.assign(vRow, cellsForPeriod(tree[vName], getKey(p, periodType))); });
+    Object.assign(vRow, totalCells(tree[vName], sortedPeriods, periodType));
     return vRow;
   });
 
-  const aeroNode = {
-    id: 'business-aerolineas',
-    name: 'Aerolíneas',
-    level: 1,
-    expandable: true,
-    children: valNodes,
-  };
+  const aeroNode = { id: 'neg-aerolineas', name: 'Aerolíneas', level: 1, expandable: true, children: valNodes };
+  sortedPeriods.forEach((p) => { Object.assign(aeroNode, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(aeroNode, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    aeroNode[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    aeroNode[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    aeroNode[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
+  const anioLabel = new Set(sortedPeriods.map((p) => p.anio)).size === 1 ? `${sortedPeriods[0].anio}` : 'Consolidado';
+  const yearRow = { id: `year-${anioLabel}`, name: anioLabel, level: 0, expandable: true, children: [aeroNode] };
+  sortedPeriods.forEach((p) => { Object.assign(yearRow, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(yearRow, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  aeroNode.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  aeroNode.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  aeroNode.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
+  const totalRow = { name: 'Total Aerolíneas' };
+  sortedPeriods.forEach((p) => { Object.assign(totalRow, cellsForPeriod(grandByPeriod, getKey(p, periodType))); });
+  Object.assign(totalRow, totalCells(grandByPeriod, sortedPeriods, periodType));
 
-  const anioDisplay =
-    new Set(sortedPeriods.map((p) => p.anio)).size === 1
-      ? `${sortedPeriods[0].anio}`
-      : 'Consolidado';
-
-  const yearRow = {
-    id: `year-${anioDisplay}`,
-    name: anioDisplay,
-    level: 0,
-    expandable: true,
-    children: [aeroNode],
-  };
-
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    yearRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    yearRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    yearRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
-
-  yearRow.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  yearRow.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  yearRow.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
-
-  const totalRow = {
-    name: 'Total Aerolíneas',
-  };
-  sortedPeriods.forEach((p) => {
-    const pKey = `${p.anio}_${p.mes}`;
-    const pData = grandTotals.periods[pKey];
-    totalRow[`ingreso_${pKey}`] = formatSoles(pData.ingreso);
-    totalRow[`nro_src_${pKey}`] = formatNum(pData.nroSrc);
-    totalRow[`tck_prom_${pKey}`] = formatTck(pData.nroSrc > 0 ? pData.ingreso / pData.nroSrc : 0);
-  });
-  totalRow.ingreso_total = formatSoles(grandTotals.total.ingreso);
-  totalRow.nro_src_total = formatNum(grandTotals.total.nroSrc);
-  totalRow.tck_prom_total = formatTck(
-    grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-  );
-
-  const distribution = valNodes.map((v, idx) => ({
-    name: v.name,
-    value: Math.round(v.rawIngreso),
-    color: ['#0EA5E9', '#38BDF8', '#0F172A'][idx] || '#64748B',
-  }));
-
-  const periodTitle =
-    sortedPeriods.length === 1
-      ? `${MESES.find((m) => m.id === sortedPeriods[0].mes)?.nombre} ${sortedPeriods[0].anio}`
-      : `${sortedPeriods.length} Meses Seleccionados`;
+  const gt = totalCells(grandByPeriod, sortedPeriods, periodType);
+  const { groupHeaders, columns } = generateTableHeaders(sortedPeriods, periodType);
+  const periodTitle = getPeriodLabel(sortedPeriods, periodType);
 
   return {
-    meta: {
-      title: 'Ingresos Aerolíneas',
-      subtitle: `Ventas Mensuales - Aerolíneas por Línea Aérea (${periodTitle})`,
-      period: periodTitle,
-    },
+    meta: { title: 'Ingresos Aerolíneas', subtitle: `Aerolíneas - Jetsmart, Latam, Sky (${periodTitle})`, period: periodTitle },
     kpis: {
-      ingresoTotal: {
-        label: 'INGRESO AEROLÍNEAS',
-        value: grandTotals.total.ingreso,
-        formatted: formatSoles(grandTotals.total.ingreso),
-        change: '+14.2%',
-        changeLabel: 'vs Mes Anterior',
-        trend: 'up',
-      },
-      nroTransacciones: {
-        label: 'NRO. TRANSACCIONES',
-        value: grandTotals.total.nroSrc,
-        formatted: formatNum(grandTotals.total.nroSrc),
-        change: '+10.8%',
-        changeLabel: 'vs Mes Anterior',
-        trend: 'up',
-      },
-      ticketPromedio: {
-        label: 'TCK. PROMEDIO',
-        value: grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0,
-        formatted: formatTck(
-          grandTotals.total.nroSrc > 0 ? grandTotals.total.ingreso / grandTotals.total.nroSrc : 0
-        ),
-        change: 'Estable',
-        changeLabel: '',
-        trend: 'neutral',
-      },
+      ingresoTotal:     { label: 'INGRESO AEROLÍNEAS',   value: gt._rawIngreso,   formatted: formatSoles(gt._rawIngreso),  change: '', changeLabel: '', trend: 'up' },
+      nroTransacciones: { label: 'NRO. TRANSACCIONES',   value: gt._rawServicios, formatted: formatNum(gt._rawServicios),  change: '', changeLabel: '', trend: 'up' },
+      ticketPromedio:   { label: 'TCK. PROMEDIO',        value: gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0, formatted: formatTck(gt._rawServicios > 0 ? gt._rawIngreso / gt._rawServicios : 0), change: '', changeLabel: '', trend: 'neutral' },
     },
-    tableData: {
-      columns,
-      groupHeaders,
-      rows: [yearRow],
-      totalRow,
-    },
-    distribution,
+    tableData: { columns, groupHeaders, rows: [yearRow], totalRow },
   };
 }
 
-/**
- * 5. OTROS INGRESOS (Flit, Flit - Costa del Sol, Flit - Directo, Logistic, Migo)
- */
-export async function fetchOtrosIngresos(selections = [
-  { anio: 2025, mes: 1 },
-  { anio: 2025, mes: 2 },
-  { anio: 2025, mes: 3 },
-  { anio: 2026, mes: 1 },
-  { anio: 2026, mes: 2 },
-  { anio: 2026, mes: 3 },
-]) {
-  const sortedPeriods = [...selections].sort((a, b) =>
-    a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes
-  );
+// ─── 5. OTROS INGRESOS ────────────────────────────────────────────────────────
+export async function fetchOtrosIngresos(
+  selections = [{ anio: 2026, mes: 6 }],
+  periodType = 'mes'
+) {
+  const sortedPeriods = [...selections].sort((a, b) => {
+    if (a.anio !== b.anio) return a.anio - b.anio;
+    return periodType === 'semana' ? a.semana - b.semana : a.mes - b.mes;
+  });
 
-  if (isSupabaseConfigured) {
-    try {
-      const promises = sortedPeriods.map(async (p) => {
-        const start = `${p.anio}-${String(p.mes).padStart(2, '0')}-01T00:00:00`;
-        const lastDay = new Date(p.anio, p.mes, 0).getDate();
-        const end = `${p.anio}-${String(p.mes).padStart(2, '0')}-${lastDay}T23:59:59`;
-        const { data, error } = await supabase
-          .from('tb_servicios_total')
-          .select('Fecha, Negocio, Val, ingreso_total')
-          .gte('Fecha', start)
-          .lte('Fecha', end)
-          .in('Negocio', [
-            'Flit', 'Flit - Directo', 'Flit  - Directo', 'FLIT', 'FLIT - DIRECTO',
-            'Flit - Costa del Sol', 'Flit  - Costa del Sol', 'FLIT - COSTA DEL SOL',
-            'Logistic', 'LOGISTIC', 'Migo', 'MIgo', 'MIGO'
-          ]);
-        if (error) {
-          console.warn(`Error fetching OtrosIngresos for ${p.anio}-${p.mes}:`, error);
-          return [];
-        }
-        return data || [];
-      });
+  const allRows = periodType === 'semana'
+    ? await getResumenSemanal(sortedPeriods)
+    : await getResumenMensual(sortedPeriods);
 
-      const results = await Promise.all(promises);
-      const allRows = results.flat();
-      return buildOtrosIngresosDashboard(allRows, sortedPeriods);
-    } catch (err) {
-      console.warn('Error in fetchOtrosIngresos DB query:', err);
-    }
-  }
+  const rows = filterRows(allRows, sortedPeriods, periodType);
 
-  return buildOtrosIngresosDashboard([], sortedPeriods);
-}
-
-function buildOtrosIngresosDashboard(dbRows, sortedPeriods) {
-  const formatVal = (v) =>
-    Number(v || 0).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-
-  // Allowed Negocios and Vals structure
+  // Allowed structure: negocio -> [vals]
   const allowedStructure = {
-    Flit: ['Flit'],
+    Flit:                 ['Flit'],
     'Flit - Costa del Sol': ['Flit - Costa del Sol'],
-    'Flit - Directo': ['Coste Ventas', 'Ingresos Ventas'],
-    Logistic: ['Logistic'],
-    Migo: ['Migo1'],
+    'Flit - Directo':     ['Coste Ventas', 'Ingresos Ventas'],
+    Logistic:             ['Logistic'],
+    Migo:                 ['Migo1'],
   };
 
-  // Distinct months in selections
-  const distinctMonths = Array.from(new Set(sortedPeriods.map((p) => p.mes))).sort(
-    (a, b) => a - b
-  );
-  const distinctYears = Array.from(new Set(sortedPeriods.map((p) => p.anio))).sort(
-    (a, b) => a - b
-  );
+  const distinctYears = [...new Set(sortedPeriods.map((p) => p.anio))].sort((a, b) => a - b);
+  const distinctUnits = [...new Set(sortedPeriods.map((p) =>
+    periodType === 'semana' ? p.semana : p.mes
+  ))].sort((a, b) => a - b);
 
-  const displayYears = distinctYears.length > 0 ? distinctYears : [2025, 2026];
-
-  // Initialize data tree: year -> month -> negocio -> val -> amount
+  // dataTree[year][unit][negocio][val] = amount
   const dataTree = {};
-  displayYears.forEach((y) => {
+  distinctYears.forEach((y) => {
     dataTree[y] = {};
-    distinctMonths.forEach((m) => {
-      dataTree[y][m] = {
-        Flit: { Flit: 0 },
-        'Flit - Costa del Sol': { 'Flit - Costa del Sol': 0 },
-        'Flit - Directo': { 'Coste Ventas': 0, 'Ingresos Ventas': 0 },
-        Logistic: { Logistic: 0 },
-        Migo: { Migo1: 0 },
-      };
+    distinctUnits.forEach((u) => {
+      dataTree[y][u] = {};
+      Object.keys(allowedStructure).forEach((neg) => {
+        dataTree[y][u][neg] = {};
+        allowedStructure[neg].forEach((v) => { dataTree[y][u][neg][v] = 0; });
+      });
     });
   });
 
-  // Overlay actual DB rows
-  dbRows.forEach((r) => {
-    const d = new Date(r.Fecha);
-    const y = d.getUTCFullYear();
-    const m = d.getUTCMonth() + 1;
-    const rawNeg = (r.Negocio || '').trim();
-    const rawVal = (r.Val || '').trim();
-    const ing = parseFloat(r.ingreso_total) || 0;
-
-    if (dataTree[y] && dataTree[y][m]) {
-      // Normalize Negocio
-      let targetNeg = null;
-      let targetVal = null;
-
-      if (/^flit\s*-\s*costa\s*del\s*sol$/i.test(rawNeg)) {
-        targetNeg = 'Flit - Costa del Sol';
-        targetVal = 'Flit - Costa del Sol';
-      } else if (/^flit\s*-\s*directo$/i.test(rawNeg)) {
-        targetNeg = 'Flit - Directo';
-        if (/coste/i.test(rawVal)) targetVal = 'Coste Ventas';
-        else if (/ingreso/i.test(rawVal)) targetVal = 'Ingresos Ventas';
-      } else if (/^flit$/i.test(rawNeg)) {
-        targetNeg = 'Flit';
-        targetVal = 'Flit';
-      } else if (/^logistic/i.test(rawNeg)) {
-        targetNeg = 'Logistic';
-        targetVal = 'Logistic';
-      } else if (/^migo/i.test(rawNeg)) {
-        targetNeg = 'Migo';
-        targetVal = 'Migo1';
-      }
-
-      if (
-        targetNeg &&
-        targetVal &&
-        dataTree[y][m][targetNeg] &&
-        dataTree[y][m][targetNeg][targetVal] !== undefined
-      ) {
-        dataTree[y][m][targetNeg][targetVal] += ing;
-      }
+  rows.forEach((r) => {
+    const neg = normaliseNegocio(r.negocio);
+    const val = normaliseVal(r.val, r.negocio);
+    if (!allowedStructure[neg] || !allowedStructure[neg].includes(val)) return;
+    const y   = r.anio;
+    const u   = periodType === 'semana' ? r.semana : r.mes;
+    const ing = parseFloat(r.total_ingreso) || 0;
+    if (dataTree[y]?.[u]?.[neg]?.[val] !== undefined) {
+      dataTree[y][u][neg][val] += ing;
     }
   });
 
-  // Table Columns
+  // Table columns
+  const formatVal = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   const columns = [
     { key: 'name', label: 'Año', width: '220px', fixed: true },
+    ...distinctUnits.map((u) => {
+      if (periodType === 'semana') return { key: `unit_${u}`, label: `SEMANA ${u}` };
+      const mObj = MESES.find((item) => item.id === u);
+      return { key: `unit_${u}`, label: mObj?.nombre || `MES ${u}` };
+    }),
+    { key: 'total', label: 'TOTAL' },
   ];
 
-  distinctMonths.forEach((m) => {
-    const mObj = MESES.find((item) => item.id === m);
-    columns.push({
-      key: `mes_${m}`,
-      label: mObj?.nombre || `MES ${m}`,
-    });
-  });
+  const grandByUnit = {};
+  distinctUnits.forEach((u) => { grandByUnit[u] = 0; });
+  let overallGrand = 0;
 
-  columns.push({
-    key: 'total',
-    label: 'TOTAL',
-  });
+  const yearNodes = distinctYears.map((y) => {
+    const yearByUnit = {};
+    distinctUnits.forEach((u) => { yearByUnit[u] = 0; });
 
-  // Calculate year totals and grand totals
-  const grandTotalsPerMonth = {};
-  let overallGrandTotal = 0;
-  distinctMonths.forEach((m) => {
-    grandTotalsPerMonth[m] = 0;
-  });
+    const negNodes = Object.keys(allowedStructure).map((negName) => {
+      const negByUnit = {};
+      distinctUnits.forEach((u) => { negByUnit[u] = 0; });
 
-  const businessDistribution = {
-    Flit: 0,
-    'Flit - Costa del Sol': 0,
-    'Flit - Directo': 0,
-    Logistic: 0,
-    Migo: 0,
-  };
-
-  const yearNodes = displayYears.map((y) => {
-    const yearTotalsPerMonth = {};
-    let yearTotal = 0;
-    distinctMonths.forEach((m) => {
-      yearTotalsPerMonth[m] = 0;
-    });
-
-    const negocioNodes = Object.keys(allowedStructure).map((negName) => {
-      const valNames = allowedStructure[negName];
-      const negTotalsPerMonth = {};
-      let negTotal = 0;
-      distinctMonths.forEach((m) => {
-        negTotalsPerMonth[m] = 0;
-      });
-
-      const valNodes = valNames.map((valName) => {
-        const valRow = {
-          id: `val-${y}-${negName.toLowerCase().replace(/\s+/g, '-')}-${valName.toLowerCase().replace(/\s+/g, '-')}`,
+      const valNodes = allowedStructure[negName].map((valName) => {
+        const vRow = {
+          id: `val-${y}-${negName}-${valName}`.replace(/\s+/g, '-'),
           name: valName,
           level: 2,
         };
-
-        let valTotal = 0;
-        distinctMonths.forEach((m) => {
-          const amt = dataTree[y]?.[m]?.[negName]?.[valName] || 0;
-          valTotal += amt;
-          negTotalsPerMonth[m] += amt;
-          valRow[`mes_${m}`] = formatVal(amt);
+        let vTotal = 0;
+        distinctUnits.forEach((u) => {
+          const amt = dataTree[y]?.[u]?.[negName]?.[valName] || 0;
+          vTotal += amt;
+          negByUnit[u] += amt;
+          vRow[`unit_${u}`] = formatVal(amt);
         });
-
-        valRow.total = formatVal(valTotal);
-        return valRow;
+        vRow.total = formatVal(vTotal);
+        return vRow;
       });
 
       const negRow = {
-        id: `neg-${y}-${negName.toLowerCase().replace(/\s+/g, '-')}`,
+        id: `neg-${y}-${negName}`.replace(/\s+/g, '-'),
         name: negName,
         level: 1,
         expandable: true,
         children: valNodes,
       };
-
-      distinctMonths.forEach((m) => {
-        const amt = negTotalsPerMonth[m];
-        negTotal += amt;
-        yearTotalsPerMonth[m] += amt;
-        negRow[`mes_${m}`] = formatVal(amt);
+      let negTotal = 0;
+      distinctUnits.forEach((u) => {
+        const amt = negByUnit[u];
+        negTotal   += amt;
+        yearByUnit[u] += amt;
+        negRow[`unit_${u}`] = formatVal(amt);
       });
-
       negRow.total = formatVal(negTotal);
-      businessDistribution[negName] += negTotal;
       return negRow;
     });
 
@@ -1320,87 +701,42 @@ function buildOtrosIngresosDashboard(dbRows, sortedPeriods) {
       name: String(y),
       level: 0,
       expandable: true,
-      defaultExpanded: y === 2025,
-      children: negocioNodes,
+      children: negNodes,
     };
-
-    distinctMonths.forEach((m) => {
-      const amt = yearTotalsPerMonth[m];
+    let yearTotal = 0;
+    distinctUnits.forEach((u) => {
+      const amt = yearByUnit[u];
       yearTotal += amt;
-      grandTotalsPerMonth[m] += amt;
-      yearRow[`mes_${m}`] = formatVal(amt);
+      grandByUnit[u] += amt;
+      yearRow[`unit_${u}`] = formatVal(amt);
     });
-
     yearRow.total = formatVal(yearTotal);
-    overallGrandTotal += yearTotal;
+    overallGrand += yearTotal;
     return yearRow;
   });
 
-  // Build Total row at bottom
-  const totalRow = {
-    name: 'Total',
-  };
+  const totalRow = { name: 'Total' };
+  distinctUnits.forEach((u) => { totalRow[`unit_${u}`] = formatVal(grandByUnit[u]); });
+  totalRow.total = formatVal(overallGrand);
 
-  distinctMonths.forEach((m) => {
-    totalRow[`mes_${m}`] = formatVal(grandTotalsPerMonth[m]);
-  });
-  totalRow.total = formatVal(overallGrandTotal);
-
-  // Distribution chart data
-  const distribution = [
-    { name: 'Flit', value: Math.round(businessDistribution.Flit), color: '#38BDF8' },
-    { name: 'Flit - Costa del Sol', value: Math.round(businessDistribution['Flit - Costa del Sol']), color: '#F59E0B' },
-    { name: 'Flit - Directo', value: Math.round(businessDistribution['Flit - Directo']), color: '#0EA5E9' },
-    { name: 'Logistic', value: Math.round(businessDistribution.Logistic), color: '#0F172A' },
-    { name: 'Migo', value: Math.round(businessDistribution.Migo), color: '#6366F1' },
-  ];
-
-  const periodTitle =
-    distinctMonths.length === 1
-      ? `${MESES.find((m) => m.id === distinctMonths[0])?.nombre}`
-      : `${distinctMonths.length} Meses Seleccionados`;
+  const periodTitle = getPeriodLabel(sortedPeriods, periodType);
 
   return {
     meta: {
       title: 'OTROS INGRESOS',
-      subtitle: `Análisis consolidado de otros negocios (Flit, Flit - Costa del Sol, Flit - Directo, Logistic, Migo) - ${periodTitle}`,
+      subtitle: `Flit, Flit - Costa del Sol, Flit - Directo, Logistic, Migo (${periodTitle})`,
       period: periodTitle,
     },
     kpis: {
-      ingresoTotal: {
-        label: 'INGRESO OTROS',
-        value: overallGrandTotal,
-        formatted: formatSoles(overallGrandTotal),
-        change: '+15.8%',
-        changeLabel: 'vs Período Anterior',
-        trend: 'up',
-      },
-      nroNegocios: {
-        label: 'NEGOCIOS ACTIVOS',
-        value: 5,
-        formatted: '5 Negocios',
-        change: 'Estable',
-        changeLabel: 'Flit, Costa del Sol, Directo, Logistic, Migo',
-        trend: 'neutral',
-      },
-      promedioMensual: {
-        label: 'PROMEDIO MENSUAL',
-        value: distinctMonths.length > 0 ? overallGrandTotal / distinctMonths.length : 0,
-        formatted: formatSoles(
-          distinctMonths.length > 0 ? overallGrandTotal / distinctMonths.length : 0
-        ),
-        change: 'Estable',
-        changeLabel: '',
-        trend: 'neutral',
+      ingresoTotal:     { label: 'INGRESO OTROS',        value: overallGrand, formatted: formatSoles(overallGrand), change: '', changeLabel: '', trend: 'up' },
+      nroNegocios:      { label: 'NEGOCIOS ACTIVOS',     value: 5,            formatted: '5 Negocios',             change: '', changeLabel: '', trend: 'neutral' },
+      promedioMensual:  {
+        label: periodType === 'semana' ? 'PROMEDIO SEMANAL' : 'PROMEDIO MENSUAL',
+        value: distinctUnits.length > 0 ? overallGrand / distinctUnits.length : 0,
+        formatted: formatSoles(distinctUnits.length > 0 ? overallGrand / distinctUnits.length : 0),
+        change: '', changeLabel: '', trend: 'neutral',
       },
     },
-    tableData: {
-      columns,
-      rows: yearNodes,
-      totalRow,
-    },
-    distribution,
+    tableData: { columns, rows: yearNodes, totalRow },
   };
 }
-
-

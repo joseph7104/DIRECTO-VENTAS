@@ -4,7 +4,21 @@ import PeriodFilterDropdown from '../components/Filters/PeriodFilterDropdown';
 import './MonthlyEarnings.css';
 
 export default function IngresosPlazas() {
+  const [periodType, setPeriodType] = useState('mes');
   const [selectedPeriods, setSelectedPeriods] = useState([{ anio: 2026, mes: 6 }]);
+
+  const handlePeriodTypeChange = (newType) => {
+    setPeriodType(newType);
+    if (newType === 'semana') {
+      setSelectedPeriods([
+        { anio: 2026, semana: 1 },
+        { anio: 2026, semana: 2 },
+        { anio: 2026, semana: 3 },
+      ]);
+    } else {
+      setSelectedPeriods([{ anio: 2026, mes: 6 }]);
+    }
+  };
 
   return (
     <div className="page monthly-page">
@@ -19,6 +33,8 @@ export default function IngresosPlazas() {
         {/* Filter on top */}
         <div className="page__filters">
           <PeriodFilterDropdown
+            periodType={periodType}
+            onPeriodTypeChange={handlePeriodTypeChange}
             selectedSelections={selectedPeriods}
             onSelectionChange={setSelectedPeriods}
           />

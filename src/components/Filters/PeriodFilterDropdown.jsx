@@ -1,42 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, ChevronUp, Check } from 'lucide-react';
-import { MESES } from '../../services/ingresosService';
+import { MESES, fetchMesesDisponibles, fetchSemanasDisponibles } from '../../services/ingresosService';
 import './PeriodFilterDropdown.css';
 
 /**
- * Hierarchical Year/Month Checkbox Filter Dropdown matching Photo 4
+ * Hierarchical Year/Month/Week Checkbox Filter Dropdown.
+ * Available periods come from the DB — nothing is hardcoded.
  */
 export default function PeriodFilterDropdown({
+  periodType = 'mes',
+  onPeriodTypeChange,
   selectedSelections = [{ anio: 2026, mes: 6 }],
   onSelectionChange,
-  availablePeriods = [
-    { anio: 2026, mes: 8 },
-    { anio: 2026, mes: 7 },
-    { anio: 2026, mes: 6 },
-    { anio: 2026, mes: 5 },
-    { anio: 2026, mes: 4 },
-    { anio: 2026, mes: 3 },
-    { anio: 2026, mes: 2 },
-    { anio: 2026, mes: 1 },
-    { anio: 2025, mes: 12 },
-    { anio: 2025, mes: 11 },
-    { anio: 2025, mes: 10 },
-    { anio: 2025, mes: 9 },
-    { anio: 2025, mes: 8 },
-    { anio: 2025, mes: 7 },
-    { anio: 2025, mes: 6 },
-    { anio: 2025, mes: 5 },
-    { anio: 2025, mes: 4 },
-    { anio: 2025, mes: 3 },
-    { anio: 2025, mes: 2 },
-    { anio: 2025, mes: 1 },
-  ],
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [expandedYears, setExpandedYears] = useState({ 2026: true, 2025: false });
+  const [expandedYears, setExpandedYears] = useState({});
+  const [availableMonths, setAvailableMonths]   = useState([]); // [{ anio, mes }]
+  const [availableWeeks,  setAvailableWeeks]    = useState([]); // [{ anio, semana }]
+  const [loading, setLoading] = useState(true);
   const containerRef = useRef(null);
 
-  // Close on outside click
+  // ── Close on outside click ─────────────────────────────────────────────────
   useEffect(() => {
     function handleClickOutside(event) {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
@@ -47,176 +31,247 @@ export default function PeriodFilterDropdown({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Group available periods by year
-  const yearsMap = {};
-  availablePeriods.forEach((p) => {
-    if (!yearsMap[p.anio]) {
-      yearsMap[p.anio] = [];
-    }
-    if (!yearsMap[p.anio].includes(p.mes)) {
-      yearsMap[p.anio].push(p.mes);
-    }
-  });
+  // ── Load available periods from DB on mount ────────────────────────────────
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      try {
+        const [months, weeks] = await Promise.all([
+          fetchMesesDisponibles(),
+          fetchSemanasDisponibles(),
+        ]);
+        setAvailableMonths(months);
+        setAvailableWeeks(weeks);
 
-  const availableYears = Object.keys(yearsMap)
-    .map(Number)
-    .sort((a, b) => b - a);
-
-  // Toggle Year expand/collapse
-  const toggleYearExpand = (yr) => {
-    setExpandedYears((prev) => ({
-      ...prev,
-      [yr]: !prev[yr],
-    }));
-  };
-
-  // Check if month is selected
-  const isMonthSelected = (yr, mes) => {
-    return selectedSelections.some((s) => s.anio === yr && s.mes === mes);
-  };
-
-  // Toggle Month
-  const handleToggleMonth = (yr, mes) => {
-    const exists = isMonthSelected(yr, mes);
-    let next;
-    if (exists) {
-      next = selectedSelections.filter((s) => !(s.anio === yr && s.mes === mes));
-      if (next.length === 0) {
-        // Keep at least one selection
-        return;
+        // Expand the most recent year by default
+        const years = [...new Set([...months, ...weeks].map((p) => p.anio))];
+        if (years.length > 0) {
+          const maxYear = Math.max(...years);
+          setExpandedYears({ [maxYear]: true });
+        }
+      } catch (err) {
+        console.warn('PeriodFilterDropdown: error loading periods:', err);
+      } finally {
+        setLoading(false);
       }
+    }
+    load();
+  }, []);
+
+  // ── Derived data ───────────────────────────────────────────────────────────
+  const current = periodType === 'semana' ? availableWeeks : availableMonths;
+
+  // Distinct years that have data, sorted descending
+  const availableYears = [...new Set(current.map((p) => p.anio))].sort((a, b) => b - a);
+
+  // Items per year
+  const itemsForYear = (yr) => {
+    if (periodType === 'semana') {
+      return availableWeeks
+        .filter((p) => p.anio === yr)
+        .map((p) => p.semana)
+        .sort((a, b) => a - b);
+    }
+    return availableMonths
+      .filter((p) => p.anio === yr)
+      .map((p) => p.mes)
+      .sort((a, b) => a - b);
+  };
+
+  // ── Checkbox helpers ───────────────────────────────────────────────────────
+  const toggleYearExpand = (yr) =>
+    setExpandedYears((prev) => ({ ...prev, [yr]: !prev[yr] }));
+
+  const isItemSelected = (yr, id) => {
+    if (periodType === 'semana')
+      return selectedSelections.some((s) => s.anio === yr && s.semana === id);
+    return selectedSelections.some((s) => s.anio === yr && s.mes === id);
+  };
+
+  const handleToggleItem = (yr, id) => {
+    const isSelected = isItemSelected(yr, id);
+    let next;
+    if (isSelected) {
+      next = periodType === 'semana'
+        ? selectedSelections.filter((s) => !(s.anio === yr && s.semana === id))
+        : selectedSelections.filter((s) => !(s.anio === yr && s.mes === id));
+      if (next.length === 0) return; // keep at least one
     } else {
-      next = [...selectedSelections, { anio: yr, mes }];
+      next = periodType === 'semana'
+        ? [...selectedSelections, { anio: yr, semana: id }]
+        : [...selectedSelections, { anio: yr, mes: id }];
     }
     onSelectionChange(next);
   };
 
-  // Toggle All Months of a Year
   const handleToggleYearAll = (yr) => {
-    const yearMonths = yearsMap[yr] || [];
-    const allSelected = yearMonths.every((m) => isMonthSelected(yr, m));
-
+    const items = itemsForYear(yr);
+    const allSelected = items.every((id) => isItemSelected(yr, id));
     let next;
     if (allSelected) {
-      // Remove all months of this year
       next = selectedSelections.filter((s) => s.anio !== yr);
       if (next.length === 0) return;
     } else {
-      // Select all months of this year
-      const otherSelections = selectedSelections.filter((s) => s.anio !== yr);
-      const newForYear = yearMonths.map((m) => ({ anio: yr, mes: m }));
-      next = [...otherSelections, ...newForYear];
+      const others = selectedSelections.filter((s) => s.anio !== yr);
+      const newForYear = periodType === 'semana'
+        ? items.map((w) => ({ anio: yr, semana: w }))
+        : items.map((m) => ({ anio: yr, mes: m }));
+      next = [...others, ...newForYear];
     }
     onSelectionChange(next);
   };
 
-  // Get status of year (all, some, none)
   const getYearCheckStatus = (yr) => {
-    const yearMonths = yearsMap[yr] || [];
-    const selectedCount = yearMonths.filter((m) => isMonthSelected(yr, m)).length;
-    if (selectedCount === 0) return 'none';
-    if (selectedCount === yearMonths.length) return 'all';
+    const items = itemsForYear(yr);
+    const sel = items.filter((id) => isItemSelected(yr, id)).length;
+    if (sel === 0) return 'none';
+    if (sel === items.length) return 'all';
     return 'indeterminate';
   };
 
-  // Format label for button
+  // ── Button label ───────────────────────────────────────────────────────────
   const getButtonLabel = () => {
+    if (loading) return 'Cargando…';
+    if (periodType === 'semana') {
+      if (selectedSelections.length === 1) {
+        const s = selectedSelections[0];
+        return `Semana ${s.semana} ${s.anio}`;
+      }
+      return selectedSelections.length > 1
+        ? `Semanas (${selectedSelections.length})`
+        : 'Seleccionar semanas';
+    }
     if (selectedSelections.length === 1) {
-      const sel = selectedSelections[0];
-      const mObj = MESES.find((m) => m.id === sel.mes);
-      return `${mObj?.nombre || 'MES'} ${sel.anio}`;
+      const s = selectedSelections[0];
+      const mObj = MESES.find((m) => m.id === s.mes);
+      return `${mObj?.nombre || 'MES'} ${s.anio}`;
     }
-    if (selectedSelections.length > 1) {
-      return `Multiple selections (${selectedSelections.length})`;
-    }
-    return 'Multiple selections';
+    return selectedSelections.length > 1
+      ? `Multiple selections (${selectedSelections.length})`
+      : 'Seleccionar período';
   };
 
   return (
-    <div className="period-filter-dropdown" ref={containerRef}>
-      <button
-        type="button"
-        className={`period-filter-trigger ${isOpen ? 'period-filter-trigger--open' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
-        aria-label="Abrir filtro de años y meses"
-      >
-        <span className="period-filter-label">AÑOS/MES</span>
-        <span className="period-filter-value">{getButtonLabel()}</span>
-        <ChevronDown size={14} className="period-filter-chevron" />
-      </button>
-
-      {isOpen && (
-        <div className="period-filter-menu">
-          <div className="period-filter-tree">
-            {availableYears.map((yr) => {
-              const isExpanded = expandedYears[yr] ?? true;
-              const checkStatus = getYearCheckStatus(yr);
-              const yearMonths = (yearsMap[yr] || []).sort((a, b) => a - b);
-
-              return (
-                <div key={yr} className="tree-year-group">
-                  {/* Year Header Item */}
-                  <div className="tree-year-header">
-                    <button
-                      type="button"
-                      className="tree-expand-btn"
-                      onClick={() => toggleYearExpand(yr)}
-                    >
-                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </button>
-
-                    <label className="tree-checkbox-container">
-                      <div
-                        className={`custom-checkbox ${
-                          checkStatus === 'all'
-                            ? 'custom-checkbox--checked'
-                            : checkStatus === 'indeterminate'
-                            ? 'custom-checkbox--indeterminate'
-                            : ''
-                        }`}
-                        onClick={() => handleToggleYearAll(yr)}
-                      >
-                        {checkStatus === 'all' && <Check size={12} strokeWidth={3} />}
-                        {checkStatus === 'indeterminate' && (
-                          <span className="indeterminate-box"></span>
-                        )}
-                      </div>
-                      <span className="tree-year-title">{yr}</span>
-                    </label>
-                  </div>
-
-                  {/* Months List */}
-                  {isExpanded && (
-                    <div className="tree-months-list">
-                      {yearMonths.map((mId) => {
-                        const mObj = MESES.find((m) => m.id === mId);
-                        const isChecked = isMonthSelected(yr, mId);
-
-                        return (
-                          <div
-                            key={`${yr}-${mId}`}
-                            className="tree-month-item"
-                            onClick={() => handleToggleMonth(yr, mId)}
-                          >
-                            <div
-                              className={`custom-checkbox ${
-                                isChecked ? 'custom-checkbox--checked' : ''
-                              }`}
-                            >
-                              {isChecked && <Check size={12} strokeWidth={3} />}
-                            </div>
-                            <span className="tree-month-name">{mObj?.nombre || `MES ${mId}`}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+    <div className="period-filter-container">
+      {/* Mode Switcher */}
+      {onPeriodTypeChange && (
+        <div className="period-mode-toggle">
+          <button
+            type="button"
+            className={`period-mode-btn ${periodType === 'mes' ? 'period-mode-btn--active' : ''}`}
+            onClick={() => onPeriodTypeChange('mes')}
+          >
+            Mensual
+          </button>
+          <button
+            type="button"
+            className={`period-mode-btn ${periodType === 'semana' ? 'period-mode-btn--active' : ''}`}
+            onClick={() => onPeriodTypeChange('semana')}
+          >
+            Semanal
+          </button>
         </div>
       )}
+
+      {/* Dropdown */}
+      <div className="period-filter-dropdown" ref={containerRef}>
+        <button
+          type="button"
+          className={`period-filter-trigger ${isOpen ? 'period-filter-trigger--open' : ''}`}
+          onClick={() => setIsOpen(!isOpen)}
+          aria-label="Abrir filtro de períodos"
+        >
+          <span className="period-filter-label">
+            {periodType === 'semana' ? 'AÑOS/SEMANA' : 'AÑOS/MES'}
+          </span>
+          <span className="period-filter-value">{getButtonLabel()}</span>
+          <ChevronDown size={14} className="period-filter-chevron" />
+        </button>
+
+        {isOpen && (
+          <div className="period-filter-menu">
+            {loading ? (
+              <div style={{ padding: '12px 16px', fontSize: '13px', opacity: 0.6 }}>
+                Cargando períodos disponibles…
+              </div>
+            ) : (
+              <div className="period-filter-tree">
+                {availableYears.length === 0 && (
+                  <div style={{ padding: '12px 16px', fontSize: '13px', opacity: 0.6 }}>
+                    Sin datos disponibles
+                  </div>
+                )}
+                {availableYears.map((yr) => {
+                  const isExpanded = expandedYears[yr] ?? false;
+                  const checkStatus = getYearCheckStatus(yr);
+                  const items = itemsForYear(yr);
+
+                  return (
+                    <div key={yr} className="tree-year-group">
+                      <div className="tree-year-header">
+                        <button
+                          type="button"
+                          className="tree-expand-btn"
+                          onClick={() => toggleYearExpand(yr)}
+                        >
+                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </button>
+
+                        <label className="tree-checkbox-container">
+                          <div
+                            className={`custom-checkbox ${
+                              checkStatus === 'all'
+                                ? 'custom-checkbox--checked'
+                                : checkStatus === 'indeterminate'
+                                ? 'custom-checkbox--indeterminate'
+                                : ''
+                            }`}
+                            onClick={() => handleToggleYearAll(yr)}
+                          >
+                            {checkStatus === 'all' && <Check size={12} strokeWidth={3} />}
+                            {checkStatus === 'indeterminate' && (
+                              <span className="indeterminate-box" />
+                            )}
+                          </div>
+                          <span className="tree-year-title">{yr}</span>
+                        </label>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="tree-items-list">
+                          {items.map((id) => {
+                            const isChecked = isItemSelected(yr, id);
+                            const name =
+                              periodType === 'semana'
+                                ? `Semana ${id}`
+                                : MESES.find((m) => m.id === id)?.nombre || `MES ${id}`;
+                            return (
+                              <div
+                                key={`${yr}-${id}`}
+                                className="tree-sub-item"
+                                onClick={() => handleToggleItem(yr, id)}
+                              >
+                                <div
+                                  className={`custom-checkbox ${
+                                    isChecked ? 'custom-checkbox--checked' : ''
+                                  }`}
+                                >
+                                  {isChecked && <Check size={12} strokeWidth={3} />}
+                                </div>
+                                <span className="tree-sub-item-name">{name}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

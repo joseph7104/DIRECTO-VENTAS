@@ -2,47 +2,28 @@ import { useState, useEffect, useCallback } from 'react';
 import { Banknote, Receipt, Tag } from 'lucide-react';
 import KpiCard from '../components/KpiCard/KpiCard';
 import DataTable from '../components/DataTable/DataTable';
-import DistributionChart from '../components/DistributionChart/DistributionChart';
 import PeriodFilterDropdown from '../components/Filters/PeriodFilterDropdown';
 import {
   LoadingScreen,
   ErrorScreen,
   EmptyScreen,
 } from '../components/Feedback/FeedbackStates';
-import {
-  fetchIngresosTotalesMulti,
-  fetchPeriodosDisponibles,
-} from '../services/ingresosService';
+import { fetchIngresosTotalesMulti } from '../services/ingresosService';
+import { usePeriodType } from '../hooks/usePeriodType';
 import './MonthlyEarnings.css';
 
 export default function IngresosTotales() {
-  const [selectedPeriods, setSelectedPeriods] = useState([{ anio: 2026, mes: 6 }]);
-  const [availablePeriods, setAvailablePeriods] = useState([]);
+  const { periodType, selectedPeriods, setSelectedPeriods, handlePeriodTypeChange, initialized } = usePeriodType();
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Load available periods on mount
-  useEffect(() => {
-    async function loadPeriods() {
-      try {
-        const periods = await fetchPeriodosDisponibles();
-        if (periods && periods.length > 0) {
-          setAvailablePeriods(periods);
-        }
-      } catch (err) {
-        console.warn('Error loading periods:', err);
-      }
-    }
-    loadPeriods();
-  }, []);
 
   // Fetch data
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchIngresosTotalesMulti(selectedPeriods);
+      const data = await fetchIngresosTotalesMulti(selectedPeriods, periodType);
       setDashboardData(data);
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
@@ -50,11 +31,11 @@ export default function IngresosTotales() {
     } finally {
       setLoading(false);
     }
-  }, [selectedPeriods]);
+  }, [selectedPeriods, periodType]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (initialized && selectedPeriods.length > 0) loadData();
+  }, [loadData, initialized]);
 
   return (
     <div className="page monthly-page">
@@ -65,16 +46,18 @@ export default function IngresosTotales() {
             {dashboardData?.meta?.title || 'Ingresos por Negocio'}
           </h2>
           <p className="page__subtitle">
-            {dashboardData?.meta?.subtitle || 'Ventas Mensuales'}
+            {dashboardData?.meta?.subtitle ||
+              (periodType === 'semana' ? 'Ventas Semanales' : 'Ventas Mensuales')}
           </p>
         </div>
 
-        {/* Tree Filter Dropdown (Photo 4) */}
+        {/* Tree Filter Dropdown with Mode Toggle */}
         <div className="page__filters">
           <PeriodFilterDropdown
+            periodType={periodType}
+            onPeriodTypeChange={handlePeriodTypeChange}
             selectedSelections={selectedPeriods}
             onSelectionChange={setSelectedPeriods}
-            availablePeriods={availablePeriods}
           />
         </div>
       </div>
@@ -96,7 +79,7 @@ export default function IngresosTotales() {
         />
       )}
 
-      {/* MAIN CONTENT (EXACT DESIGN) */}
+      {/* MAIN CONTENT */}
       {dashboardData && !error && (
         <>
           {/* KPI Cards */}
@@ -127,7 +110,7 @@ export default function IngresosTotales() {
             />
           </div>
 
-          {/* Grid Layout: DataTable (Left) + DistributionChart (Right) */}
+          {/* Full Width Table Layout */}
           <div className="page__content-grid">
             <div className="page__table-area">
               <DataTable
@@ -137,14 +120,6 @@ export default function IngresosTotales() {
                 totalRow={dashboardData.tableData.totalRow}
                 groupHeaders={dashboardData.tableData.groupHeaders}
               />
-            </div>
-            <div className="page__chart-area">
-              <DistributionChart
-                title="Distribución de Ingresos"
-                data={dashboardData.distribution}
-                type="donut"
-              />
-              <div className="page__period-label">{dashboardData.meta.period}</div>
             </div>
           </div>
         </>
@@ -157,7 +132,7 @@ export default function IngresosTotales() {
           message="No se encontraron registros para los períodos seleccionados."
           actionLabel="Ver Junio 2026"
           onAction={() => {
-            setSelectedPeriods([{ anio: 2026, mes: 6 }]);
+            handlePeriodTypeChange('mes');
           }}
         />
       )}
